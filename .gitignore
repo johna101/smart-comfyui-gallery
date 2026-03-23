@@ -52,5 +52,6 @@ buildkitd.toml
 
 # Test artifacts
 compose-test.yaml
-SmartGallery
+/SmartGallery
+!smartgallery/
 temp
