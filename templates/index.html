@@ -7224,7 +7224,7 @@
     <div id="shortcuts-help-overlay">
         <div class="shortcuts-panel" style="width: 1000px; max-width: 95vw;">
             <div class="shortcuts-header">
-                <h2>⌨️ Keyboard Shortcuts</h2>
+                <h2>⌨️ Keyboard Shortcuts (Legacy)</h2>
                 <button class="close-btn" id="close-shortcuts-btn">×</button>
             </div>
             <div class="shortcuts-content">
@@ -9113,11 +9113,18 @@
             }
             // -------------------------------
 
-            currentLightboxIndex = galleryItems.findIndex(item => item.dataset.fileId === fileId); 
-            if (currentLightboxIndex === -1) return; 
-            currentZoom = 1; currentTranslateX = 0; currentTranslateY = 0; panStep = 50; 
-            document.body.classList.add('lightbox-open'); 
-            lightboxOverlay.classList.add('visible'); 
+            // --- VUE LIGHTBOX BRIDGE ---
+            // If Vue lightbox is available, delegate to it
+            if (window.__vueOpenLightbox && window.__vueOpenLightbox(fileId)) {
+                return;
+            }
+            // ---------------------------
+
+            currentLightboxIndex = galleryItems.findIndex(item => item.dataset.fileId === fileId);
+            if (currentLightboxIndex === -1) return;
+            currentZoom = 1; currentTranslateX = 0; currentTranslateY = 0; panStep = 50;
+            document.body.classList.add('lightbox-open');
+            lightboxOverlay.classList.add('visible');
             showItemAtIndex(currentLightboxIndex); 
         }
         
