@@ -84,7 +84,7 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
     </div>
 
     <!-- Toolbar -->
-    <div class="flex items-center gap-1 flex-wrap">
+    <div class="flex items-center gap-2 flex-wrap">
       <!-- Zoom -->
       <button
         class="lb-btn"
@@ -185,6 +185,6 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
 <style scoped>
 @reference "tailwindcss";
 .lb-btn {
-  @apply text-white/70 hover:text-white hover:bg-white/10 rounded px-2 py-1 text-sm transition-colors cursor-pointer no-underline;
+  @apply text-white/70 hover:text-white hover:bg-white/10 rounded-lg px-2.5 py-1.5 text-base transition-colors cursor-pointer no-underline;
 }
 </style>
