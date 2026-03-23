@@ -142,3 +142,4 @@ No automated test suite. Changes verified manually by running the app against a 
 ## Candidate Features
 - **Storyboard burst frames** — from zoom view, request N additional frames around current timestamp (e.g., 10 frames, 5 either side, every 2nd frame). For finding the perfect frame in fast-moving video (avoiding blinks, catching expressions). Backend: ffmpeg can extract at any timestamp, so burst = parallel extraction of N timestamps around the current one
 - **Save storyboard frame to ComfyUI input** — save HD frame directly to BASE_INPUT_PATH for use as reference in further generations
+- **Idle pre-fetch thumbnails** — when scroll is idle, speculatively load the next row of thumbnails using requestIdleCallback or scroll-idle detection. Currently thumbnails only load when visible for 150ms
