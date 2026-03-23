@@ -22,6 +22,7 @@ const emit = defineEmits<{
   copyWorkflow: []
   storyboard: []
   navigateFolder: [folderKey: string]
+  toggleMeta: []
 }>()
 
 const gallery = useGalleryStore()
@@ -179,6 +180,13 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
         title="Storyboard (E)"
         @click="emit('storyboard')"
       >🎞️</button>
+
+      <!-- Info / Metadata panel -->
+      <button
+        class="lb-btn"
+        title="File Info & Prompt (I)"
+        @click="emit('toggleMeta')"
+      >👁️</button>
 
       <div class="w-px h-6 bg-white/20 mx-1" />
 

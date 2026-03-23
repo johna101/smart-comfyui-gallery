@@ -19,6 +19,7 @@ export interface LightboxKeyActions {
   pan: (dx: number, dy: number) => void
   toggleUi: () => void
   toggleHelp: () => void
+  toggleMeta: () => void
   openStoryboard: () => void
   isOpen: () => boolean
 }
@@ -136,6 +137,10 @@ export function useLightboxKeys(actions: LightboxKeyActions) {
       case 'e':
         e.preventDefault()
         actions.openStoryboard()
+        break
+      case 'i':
+        e.preventDefault()
+        actions.toggleMeta()
         break
     }
   }

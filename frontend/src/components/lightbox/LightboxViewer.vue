@@ -19,6 +19,7 @@ const { navigateToFolder } = useFolderNavigation()
 // --- State ---
 const uiHidden = ref(false)
 const showHelp = ref(false)
+const showMeta = ref(false)
 const notification = ref('')
 const notificationTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 const mediaRef = ref<InstanceType<typeof LightboxMedia> | null>(null)
@@ -196,6 +197,19 @@ function toggleHelp() {
   showHelp.value = !showHelp.value
 }
 
+function toggleMeta() {
+  showMeta.value = !showMeta.value
+}
+
+async function copyToClipboard(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    showNotification('Copied to clipboard')
+  } catch {
+    showNotification('Copy failed')
+  }
+}
+
 // --- Keyboard shortcuts ---
 useLightboxKeys({
   isOpen: () => ui.lightboxOpen,
@@ -220,6 +234,7 @@ useLightboxKeys({
   pan: (dx, dy) => zoom.panByStep(dx, dy),
   toggleUi,
   toggleHelp,
+  toggleMeta,
   openStoryboard: storyboard,
 })
 </script>
@@ -248,6 +263,7 @@ useLightboxKeys({
           @copy-workflow="copyWorkflow"
           @storyboard="storyboard"
           @navigate-folder="navigateToFolderFromLightbox"
+          @toggle-meta="toggleMeta"
         />
 
         <!-- Media area -->
@@ -262,6 +278,83 @@ useLightboxKeys({
             @drag-end="zoom.onDragEnd"
             @wheel="zoom.onWheel"
           />
+
+          <!-- Metadata panel -->
+          <Transition name="slide-right">
+            <div
+              v-if="showMeta && currentFile && !uiHidden"
+              class="absolute left-0 top-0 bottom-0 w-[360px] max-w-[50%] z-30 overflow-y-auto
+                bg-black/70 backdrop-blur-md border-r border-white/10"
+            >
+              <div class="p-4 space-y-4 text-sm">
+                <div class="flex items-center justify-between">
+                  <h3 class="text-white font-medium">File Info</h3>
+                  <button
+                    class="text-white/40 hover:text-white text-lg cursor-pointer"
+                    @click="showMeta = false"
+                  >✕</button>
+                </div>
+
+                <!-- Basic info -->
+                <div class="space-y-1.5 text-white/70">
+                  <div><span class="text-white/40">Name:</span> {{ currentFile.name }}</div>
+                  <div v-if="currentFile.dimensions"><span class="text-white/40">Size:</span> {{ currentFile.dimensions }}</div>
+                  <div v-if="currentFile.duration"><span class="text-white/40">Duration:</span> {{ currentFile.duration }}</div>
+                  <div><span class="text-white/40">Type:</span> {{ currentFile.type }}</div>
+                  <div v-if="currentFile.has_workflow" class="text-green-400 text-xs">✓ Has workflow</div>
+                </div>
+
+                <!-- Prompt -->
+                <div v-if="currentFile.workflow_prompt">
+                  <div class="flex items-center justify-between mb-1">
+                    <h4 class="text-white/50 text-xs uppercase tracking-wide">Prompt</h4>
+                    <button
+                      class="text-white/30 hover:text-white text-xs cursor-pointer"
+                      title="Copy prompt"
+                      @click="copyToClipboard(currentFile.workflow_prompt)"
+                    >📋</button>
+                  </div>
+                  <div class="text-white/80 text-xs leading-relaxed whitespace-pre-wrap bg-white/5 rounded-lg p-3 max-h-[40vh] overflow-y-auto">
+                    {{ currentFile.workflow_prompt }}
+                  </div>
+                </div>
+
+                <!-- Workflow files -->
+                <div v-if="currentFile.workflow_files">
+                  <div class="flex items-center justify-between mb-1">
+                    <h4 class="text-white/50 text-xs uppercase tracking-wide">Workflow Files</h4>
+                    <button
+                      class="text-white/30 hover:text-white text-xs cursor-pointer"
+                      title="Copy all"
+                      @click="copyToClipboard(currentFile.workflow_files.replaceAll(' ||| ', '\n'))"
+                    >📋</button>
+                  </div>
+                  <div class="bg-white/5 rounded-lg p-2 max-h-[30vh] overflow-y-auto space-y-0.5">
+                    <div
+                      v-for="(item, i) in currentFile.workflow_files.split(' ||| ').filter(Boolean)"
+                      :key="i"
+                      class="flex items-center gap-2 group/wf px-1.5 py-1 rounded hover:bg-white/5"
+                    >
+                      <span class="text-white/80 text-xs flex-1 truncate" :title="item">{{ item }}</span>
+                      <button
+                        class="text-white/20 hover:text-white text-xs shrink-0 opacity-0 group-hover/wf:opacity-100 transition-opacity cursor-pointer"
+                        title="Copy"
+                        @click="copyToClipboard(item)"
+                      >📋</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- AI Caption -->
+                <div v-if="currentFile.ai_caption">
+                  <h4 class="text-white/50 text-xs uppercase tracking-wide mb-1">AI Caption</h4>
+                  <div class="text-white/80 text-xs leading-relaxed bg-white/5 rounded-lg p-3">
+                    {{ currentFile.ai_caption }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Transition>
 
           <!-- Navigation arrows -->
           <button
@@ -329,6 +422,7 @@ useLightboxKeys({
                 <span class="text-white/50">N</span><span>Node Summary</span>
                 <span class="text-white/50">O</span><span>Open in New Tab</span>
                 <span class="text-white/50">E</span><span>Storyboard</span>
+                <span class="text-white/50">I</span><span>File Info & Prompt</span>
                 <span class="text-white/50">+/-/0</span><span>Zoom In/Out/Reset</span>
                 <span class="text-white/50">Numpad</span><span>Pan image</span>
                 <span class="text-white/50">.</span><span>Cycle pan step</span>
@@ -385,6 +479,17 @@ useLightboxKeys({
 }
 .fade-enter-from,
 .fade-leave-to {
+  opacity: 0;
+}
+
+/* Slide right */
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.slide-right-enter-from,
+.slide-right-leave-to {
+  transform: translateX(-100%);
   opacity: 0;
 }
 </style>
