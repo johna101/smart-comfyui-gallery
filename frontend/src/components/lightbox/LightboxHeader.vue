@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { GalleryFile } from '@/types/gallery'
+import type { GalleryFile, FolderInfo } from '@/types/gallery'
 import { mediaApi } from '@/api/gallery'
 import { useGalleryStore } from '@/stores/gallery'
 
@@ -38,7 +38,7 @@ const folderBreadcrumbs = computed(() => {
   const crumbs: Array<{ key: string; name: string }> = []
   let current: string | null = folderKey
   while (current && current !== '_root_') {
-    const f = gallery.folders[current]
+    const f: FolderInfo | undefined = gallery.folders[current]
     if (!f) break
     crumbs.unshift({ key: current, name: f.display_name })
     current = f.parent ?? null

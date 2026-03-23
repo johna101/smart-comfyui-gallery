@@ -31,15 +31,6 @@ const sortDir = ref('asc')
 const moving = ref(false)
 const pickerExpanded = ref(new Set<string>(['_root_']))
 
-function toggleSort() {
-  if (sortKey.value === 'name') {
-    sortKey.value = 'mtime'
-    sortDir.value = 'desc'
-  } else {
-    sortKey.value = 'name'
-    sortDir.value = 'asc'
-  }
-}
 
 async function handlePick(destinationKey: string) {
   if (destinationKey === props.folderKey) return

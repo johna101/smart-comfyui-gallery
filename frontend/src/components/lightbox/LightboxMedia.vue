@@ -29,16 +29,16 @@ const isImage = computed(() =>
   props.file?.type === 'image' || props.file?.type === 'animated_image'
 )
 
-/** Determine video source — stream large files or non-native formats */
+/** Determine video source — transcode only non-native formats */
 function getVideoSrc(file: GalleryFile): string {
   const ext = file.name.split('.').pop()?.toLowerCase() || ''
-  const nonNative = ['mov', 'mkv', 'avi', 'wmv', 'flv']
-  const forceStream = nonNative.includes(ext)
-  const isLarge = file.size > gallery.streamThreshold
+  // Formats browsers can't play natively — need ffmpeg transcode
+  const needsTranscode = ['mkv', 'avi', 'wmv', 'flv'].includes(ext)
 
-  if (gallery.ffmpegAvailable && (forceStream || isLarge)) {
+  if (gallery.ffmpegAvailable && needsTranscode) {
     return mediaApi.streamUrl(file.id)
   }
+  // MP4, WebM, MOV: serve directly with range request support (any size)
   return mediaApi.fileUrl(file.id)
 }
 

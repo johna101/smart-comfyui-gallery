@@ -30,6 +30,11 @@ media_bp = Blueprint('media', __name__, url_prefix='/galleryout')
 def serve_file(file_id):
     filepath = get_file_info_from_db(file_id, 'path')
     if filepath.lower().endswith('.webp'): return send_file(filepath, mimetype='image/webp')
+    # Enable range requests for video files (required for seeking and large files)
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext in ('.mp4', '.webm', '.mov', '.mkv'):
+        mimetype = {'.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.mkv': 'video/x-matroska'}.get(ext, 'video/mp4')
+        return send_file(filepath, mimetype=mimetype, conditional=True)
     return send_file(filepath)
 
 

@@ -91,7 +91,11 @@
     </script>
 
     {% if config.DEBUG %}
+    <!-- Vite dev server — HMR in debug mode -->
     <script type="module" src="http://localhost:5173/src/main.ts"></script>
+    {% else %}
+    <!-- Production build from frontend/dist -->
+    {{ vue_assets | safe }}
     {% endif %}
 </body>
 </html>

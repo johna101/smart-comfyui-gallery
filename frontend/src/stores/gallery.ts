@@ -279,7 +279,7 @@ export const useGalleryStore = defineStore('gallery', () => {
         folders.value = data.folders as FoldersMap
       }
       currentFolderKey.value = data.currentFolderKey
-      currentFolderInfo.value = data.currentFolderInfo as FolderInfo
+      currentFolderInfo.value = data.currentFolderInfo as unknown as FolderInfo
       breadcrumbs.value = data.breadcrumbs as Breadcrumb[]
       ancestorKeys.value = data.ancestorKeys
       totalFiles.value = data.totalFiles

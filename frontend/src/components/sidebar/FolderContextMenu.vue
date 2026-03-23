@@ -20,7 +20,7 @@ const folder = ref(gallery.folders[props.folderKey])
 const isMount = ref(folder.value?.is_mount ?? false)
 const isProtected = ref(gallery.protectedFolderKeys.includes(props.folderKey))
 
-function handleClickOutside(e: MouseEvent) {
+function handleClickOutside(_e: MouseEvent) {
   emit('close')
 }
 

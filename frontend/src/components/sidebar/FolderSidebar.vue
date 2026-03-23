@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, onMounted, watch, nextTick } from 'vue'
 import { useGalleryStore } from '@/stores/gallery'
 import { usePreferencesStore } from '@/stores/preferences'
 import { useFolderNavigation } from '@/composables/useFolderNavigation'

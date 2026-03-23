@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { GalleryFile } from '@/types/gallery'
 import { mediaApi } from '@/api/gallery'
 

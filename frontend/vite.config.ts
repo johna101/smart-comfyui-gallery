@@ -27,5 +27,6 @@ export default defineConfig({
     // Output to Flask's static directory for production
     outDir: '../static/dist',
     emptyOutDir: true,
+    manifest: true,
   },
 })

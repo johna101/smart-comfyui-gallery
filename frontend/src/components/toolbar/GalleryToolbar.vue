@@ -13,7 +13,6 @@ const filters = useFilterStore()
 const { navigateToFolder } = useFolderNavigation()
 
 const showFilters = ref(false)
-const showUpload = ref(false)
 const uploadInput = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
 const rescanJobId = ref<string | null>(null)
@@ -21,12 +20,6 @@ const rescanJobId = ref<string | null>(null)
 // Sort
 const sortBy = ref(new URLSearchParams(window.location.search).get('sort_by') || 'date')
 const sortOrder = ref(new URLSearchParams(window.location.search).get('sort_order') || 'desc')
-
-const sortLabel = computed(() => {
-  const field = sortBy.value === 'name' ? 'Name' : 'Date'
-  const arrow = sortOrder.value === 'asc' ? '↑' : '↓'
-  return `${field} ${arrow}`
-})
 
 function toggleSort(field: 'date' | 'name') {
   if (sortBy.value === field) {

@@ -140,7 +140,7 @@ async function downloadZip() {
 }
 
 // Close dropdown on outside click
-function closeMore(e: MouseEvent) {
+function closeMore(_e: MouseEvent) {
   if (showMore.value) showMore.value = false
 }
 

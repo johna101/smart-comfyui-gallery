@@ -123,7 +123,8 @@ function handleClick() {
   }
 }
 
-const rowEl = ref<HTMLElement | null>(null)
+const rowEl = ref<HTMLElement | null>(null) // template ref
+void rowEl // suppress TS6133 — used as template ref
 
 function handleContextMenu(e: MouseEvent) {
   e.preventDefault()
