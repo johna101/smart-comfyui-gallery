@@ -37,6 +37,9 @@ export function useLightboxKeys(actions: LightboxKeyActions) {
 
     const key = e.key.toLowerCase()
 
+    // Don't intercept browser shortcuts (Cmd+R, Ctrl+R, etc.)
+    if (e.metaKey || e.ctrlKey || e.altKey) return
+
     switch (key) {
       case 'escape':
         e.preventDefault()

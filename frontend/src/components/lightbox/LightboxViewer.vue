@@ -7,6 +7,7 @@ import { useLightboxZoom } from '@/composables/useLightboxZoom'
 import { useLightboxKeys } from '@/composables/useLightboxKeys'
 import LightboxHeader from './LightboxHeader.vue'
 import LightboxMedia from './LightboxMedia.vue'
+import StoryboardViewer from '@/components/storyboard/StoryboardViewer.vue'
 import type { GalleryFile } from '@/types/gallery'
 
 const gallery = useGalleryStore()
@@ -154,10 +155,31 @@ function nodeSummary() {
   window.dispatchEvent(event)
 }
 
+const showStoryboard = ref(false)
+
+const videoWasPlaying = ref(false)
+
 function storyboard() {
   if (!currentFile.value) return
-  const event = new CustomEvent('vue:storyboard', { detail: { fileId: currentFile.value.id } })
-  window.dispatchEvent(event)
+  // Pause video while viewing storyboard
+  const video = mediaRef.value?.videoRef
+  if (video && !video.paused) {
+    videoWasPlaying.value = true
+    video.pause()
+  } else {
+    videoWasPlaying.value = false
+  }
+  showStoryboard.value = true
+}
+
+function closeStoryboard() {
+  showStoryboard.value = false
+  // Resume video if it was playing before
+  if (videoWasPlaying.value) {
+    const video = mediaRef.value?.videoRef
+    if (video) video.play()
+    videoWasPlaying.value = false
+  }
 }
 
 function toggleUi() {
@@ -317,6 +339,13 @@ useLightboxKeys({
         </Transition>
       </div>
     </Transition>
+
+    <!-- Storyboard overlay -->
+    <StoryboardViewer
+      v-if="showStoryboard && currentFile"
+      :file="currentFile"
+      @close="closeStoryboard"
+    />
   </Teleport>
 </template>
 

@@ -158,7 +158,30 @@ def get_storyboard(file_id):
             cached_files = sorted(glob.glob(os.path.join(cache_subdir, "frame_*.jpg")))
             if len(cached_files) > 0:
                 urls = [f"/galleryout/storyboard_frame/{file_hash}/{os.path.basename(f)}" for f in cached_files]
-                return jsonify({'status': 'success', 'cached': True, 'frames': urls})
+                # We need video info for cached results too — probe it
+                _duration, _fps, _total_frames = 0, 0, 0
+                if info['type'] == 'video' and has_ffmpeg:
+                    try:
+                        _cmd = [state.FFPROBE_EXECUTABLE_PATH, '-v', 'error', '-select_streams', 'v:0',
+                                '-show_entries', 'stream=duration,r_frame_rate,nb_frames', '-of', 'csv=p=0', filepath]
+                        _res = subprocess.run(_cmd, capture_output=True, text=True, timeout=3,
+                                              creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+                        if _res.stdout.strip():
+                            _parts = _res.stdout.strip().split(',')
+                            if len(_parts) > 0 and _parts[0]:
+                                if '/' in _parts[0]:
+                                    _n, _d = _parts[0].split('/')
+                                    _fps = float(_n) / float(_d)
+                                else:
+                                    _fps = float(_parts[0])
+                            if len(_parts) > 1 and _parts[1]: _duration = float(_parts[1])
+                            if len(_parts) > 2 and _parts[2]: _total_frames = int(_parts[2])
+                        if _total_frames == 0 and _duration > 0 and _fps > 0:
+                            _total_frames = int(_duration * _fps)
+                    except:
+                        pass
+                return jsonify({'status': 'success', 'cached': True, 'frames': urls,
+                                'totalVideoFrames': _total_frames, 'fps': round(_fps, 2), 'duration': round(_duration, 2)})
 
         os.makedirs(cache_subdir, exist_ok=True)
 
@@ -583,7 +606,8 @@ def get_storyboard(file_id):
         if not final_urls:
              return jsonify({'status': 'error', 'message': 'Extraction failed completely.'}), 500
 
-        return jsonify({'status': 'success', 'cached': False, 'frames': final_urls})
+        return jsonify({'status': 'success', 'cached': False, 'frames': final_urls,
+                        'totalVideoFrames': total_video_frames, 'fps': round(fps, 2), 'duration': round(duration, 2)})
 
     except Exception as e:
         print(f"Storyboard error: {e}")
@@ -597,6 +621,99 @@ def serve_storyboard_frame(file_hash, filename):
     safe_name = secure_filename(filename)
     directory = os.path.join(THUMBNAIL_CACHE_DIR, file_hash)
     return send_from_directory(directory, safe_name)
+
+
+@media_bp.route('/storyboard_hires/<string:file_id>/<int:frame_index>')
+def storyboard_hires(file_id, frame_index):
+    """Extract a single frame at native resolution on demand."""
+    has_ffmpeg = state.FFPROBE_EXECUTABLE_PATH is not None
+    if not has_ffmpeg:
+        return jsonify({'status': 'error', 'message': 'FFmpeg not available'}), 501
+
+    try:
+        info = get_file_info_from_db(file_id)
+        if info['type'] not in ['video', 'animated_image']:
+            return jsonify({'status': 'error', 'message': 'Not a video'}), 400
+
+        filepath = info['path']
+        mtime = info['mtime']
+
+        # Get duration (same logic as storyboard)
+        duration = 0
+        try:
+            cmd_info = [
+                state.FFPROBE_EXECUTABLE_PATH,
+                '-v', 'error',
+                '-select_streams', 'v:0',
+                '-show_entries', 'stream=duration,r_frame_rate,nb_frames',
+                '-of', 'csv=p=0',
+                filepath
+            ]
+            res = subprocess.run(cmd_info, capture_output=True, text=True, timeout=3,
+                                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+            if res.stdout.strip():
+                parts = res.stdout.strip().split(',')
+                if len(parts) > 1 and parts[1]:
+                    duration = float(parts[1])
+        except:
+            pass
+
+        if duration <= 0 and info.get('duration'):
+            try:
+                parts = info['duration'].split(':')
+                parts.reverse()
+                duration += float(parts[0])
+                if len(parts) > 1: duration += int(parts[1]) * 60
+                if len(parts) > 2: duration += int(parts[2]) * 3600
+            except:
+                pass
+
+        if duration <= 0:
+            duration = 60
+
+        # Calculate timestamp for this frame (11 frames, evenly spaced)
+        safe_end = max(0, duration - 0.1)
+        frame_index = max(0, min(10, frame_index))
+        timestamp = (safe_end / 10) * frame_index
+
+        # Extract at native resolution (no scale filter)
+        file_hash = hashlib.md5((filepath + str(mtime)).encode()).hexdigest()
+        cache_subdir = os.path.join(THUMBNAIL_CACHE_DIR, file_hash)
+        os.makedirs(cache_subdir, exist_ok=True)
+        out_path = os.path.join(cache_subdir, f"hires_{frame_index:02d}.jpg")
+
+        # Return cached if exists
+        if os.path.exists(out_path) and os.path.getsize(out_path) > 100:
+            return send_file(out_path, mimetype='image/jpeg')
+
+        ffmpeg_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+        ffmpeg_bin = os.path.join(os.path.dirname(state.FFPROBE_EXECUTABLE_PATH), ffmpeg_name)
+        if not os.path.exists(ffmpeg_bin):
+            ffmpeg_bin = ffmpeg_name
+
+        cmd = [
+            ffmpeg_bin, '-y',
+            '-ss', f"{timestamp:.3f}",
+            '-i', filepath,
+            '-frames:v', '1',
+            '-q:v', '2',
+            out_path
+        ]
+
+        subprocess.run(
+            cmd, check=True,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        )
+
+        if os.path.exists(out_path) and os.path.getsize(out_path) > 100:
+            return send_file(out_path, mimetype='image/jpeg')
+
+        return jsonify({'status': 'error', 'message': 'Frame extraction failed'}), 500
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 @media_bp.route('/input_file/<path:filename>')

@@ -126,6 +126,9 @@ export const mediaApi = {
   compareFiles: (idA: string, idB: string) =>
     post<{ status: string; diff: Array<{ key: string; val_a: string; val_b: string; is_diff: boolean }> }>(`${BASE}/api/compare_files`, { id_a: idA, id_b: idB }),
 
+  getStoryboard: (fileId: string) =>
+    request<{ status: string; frames?: string[]; message?: string }>(`${BASE}/storyboard/${fileId}`),
+
   /** Returns raw URL strings — not fetched, used as src attributes */
   fileUrl: (fileId: string) => `${BASE}/file/${fileId}`,
   thumbnailUrl: (fileId: string) => `${BASE}/thumbnail/${fileId}`,
@@ -133,4 +136,5 @@ export const mediaApi = {
   workflowUrl: (fileId: string) => `${BASE}/workflow/${fileId}`,
   streamUrl: (fileId: string) => `${BASE}/stream/${fileId}`,
   storyboardUrl: (fileId: string) => `${BASE}/storyboard/${fileId}`,
+  storyboardHiresUrl: (fileId: string, frameIndex: number) => `${BASE}/storyboard_hires/${fileId}/${frameIndex}`,
 }
