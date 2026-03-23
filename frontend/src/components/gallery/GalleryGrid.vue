@@ -39,9 +39,12 @@ function openLightbox(fileId: string) {
     <!-- Grid -->
     <div
       v-else
-      class="grid gap-8 p-8"
+      class="grid gap-4 p-4"
       :class="focusMode ? 'gallery-focus' : ''"
-      :style="{ gridTemplateColumns: `repeat(auto-fill, minmax(${gridItemSize}px, 1fr))` }"
+      :style="{
+        gridTemplateColumns: `repeat(auto-fill, minmax(${gridItemSize}px, 1fr))`,
+        alignItems: 'start',
+      }"
     >
       <GalleryCard
         v-for="file in gallery.files"

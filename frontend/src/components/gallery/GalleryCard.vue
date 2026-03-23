@@ -23,6 +23,28 @@ const isAnimated = computed(() => props.file.type === 'animated_image')
 const hasWorkflow = computed(() => !!props.file.has_workflow)
 const isFavorite = computed(() => !!props.file.is_favorite)
 
+// Parse dimensions into aspect ratio bucket
+const aspectClass = computed(() => {
+  const dims = props.file.dimensions
+  if (!dims) return 'aspect-[4/3]' // fallback
+
+  const match = dims.match(/(\d+)\s*x\s*(\d+)/)
+  if (!match) return 'aspect-[4/3]'
+
+  const w = parseInt(match[1])
+  const h = parseInt(match[2])
+  if (w === 0 || h === 0) return 'aspect-[4/3]'
+
+  const ratio = w / h
+
+  // Buckets chosen to avoid extreme height variation in the grid
+  if (ratio > 1.5)      return 'aspect-video'     // wide landscape (16:9, 2:1, etc.)
+  if (ratio > 1.15)     return 'aspect-[4/3]'     // standard landscape
+  if (ratio > 0.85)     return 'aspect-square'     // square-ish (1:1, 4:5ish)
+  if (ratio > 0.6)      return 'aspect-[3/4]'     // portrait (3:4, 2:3)
+  return 'aspect-[9/16]'                           // tall portrait (9:16)
+})
+
 const fileSize = computed(() => {
   const bytes = props.file.size
   if (bytes < 1024) return `${bytes} B`
@@ -86,7 +108,8 @@ async function deleteFile(e: MouseEvent) {
   >
     <!-- Thumbnail (click opens lightbox or toggles selection in focus mode) -->
     <div
-      class="relative aspect-[4/3] bg-neutral-800 overflow-hidden cursor-pointer"
+      class="relative bg-neutral-800 overflow-hidden cursor-pointer"
+      :class="aspectClass"
       @click="handleThumbnailClick"
     >
       <img
