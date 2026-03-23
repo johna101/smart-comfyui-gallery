@@ -6548,6 +6548,7 @@
     
         <div id="gallery-anchor"></div>
         <main class="gallery-container" id="gallery-container"></main>
+        <div id="vue-app"></div>
         <!-- Load More Button with Logic Check -->
         <div id="load-more-container" {% if total_files <= files|length %}style="display:none;"{% endif %}>
             <button id="load-more-btn">
@@ -7374,8 +7375,8 @@
         <button class="close-btn" onclick="closeSbZoom()" style="position:absolute; top:20px; right:20px; font-size:2rem; z-index:4005;">×</button>
     </div>
 
-    <!-- Vue 3 mount point — components render here during incremental migration -->
-    <div id="vue-app"></div>
+    <!-- Vue 3 mount point — moved to main-content area for gallery grid layout -->
+    <!-- <div id="vue-app"></div> relocated to inside main-content -->
 
     <!-- Consolidated data bridge: Flask → Vue (and legacy JS) -->
     <script>
@@ -7605,8 +7606,9 @@
         // --- FOLDER TREE MANAGEMENT FUNCTIONS ---
         
         // Utility for notifications with custom duration support
-        function showNotification(message, type = 'info', duration = 5000) { 
-            const container = document.getElementById('notification-container'); 
+        function showNotification(message, type = 'info', duration = 5000) {
+            return; // Disabled — legacy toasts
+            const container = document.getElementById('notification-container');
             if (!container) return; 
             const notification = document.createElement('div'); 
             notification.className = `notification ${type}`; 
@@ -8629,6 +8631,8 @@
             }
             // Persist preference in localStorage
             localStorage.setItem('galleryFocusMode', isActive);
+            // Notify Vue
+            if (window.__vueSetFocusMode) window.__vueSetFocusMode(isActive);
         }
 
         // Initialize state on page load

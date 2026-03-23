@@ -46,6 +46,7 @@ export const useGalleryStore = defineStore('gallery', () => {
   const selectedCount = computed(() => selectedFiles.value.size)
   const hasSelection = computed(() => selectedFiles.value.size > 0)
   const currentFolder = computed(() => folders.value[currentFolderKey.value])
+  const hasMoreFiles = computed(() => files.value.length < totalFiles.value)
 
   // --- Actions ---
   function initFromServer() {
@@ -84,19 +85,41 @@ export const useGalleryStore = defineStore('gallery', () => {
   }
 
   function toggleFileSelection(fileId: string) {
-    if (selectedFiles.value.has(fileId)) {
-      selectedFiles.value.delete(fileId)
+    const next = new Set(selectedFiles.value)
+    if (next.has(fileId)) {
+      next.delete(fileId)
     } else {
-      selectedFiles.value.add(fileId)
+      next.add(fileId)
     }
+    selectedFiles.value = next
   }
 
   function clearSelection() {
-    selectedFiles.value.clear()
+    selectedFiles.value = new Set()
   }
 
   function selectAll() {
-    files.value.forEach(f => selectedFiles.value.add(f.id))
+    selectedFiles.value = new Set(files.value.map(f => f.id))
+  }
+
+  function appendFiles(newFiles: GalleryFile[]) {
+    files.value.push(...newFiles)
+  }
+
+  function removeFile(fileId: string) {
+    const idx = files.value.findIndex(f => f.id === fileId)
+    if (idx >= 0) {
+      files.value.splice(idx, 1)
+      const next = new Set(selectedFiles.value)
+      next.delete(fileId)
+      selectedFiles.value = next
+      totalFiles.value--
+    }
+  }
+
+  function updateFile(fileId: string, patch: Partial<GalleryFile>) {
+    const file = files.value.find(f => f.id === fileId)
+    if (file) Object.assign(file, patch)
   }
 
   return {
@@ -109,8 +132,9 @@ export const useGalleryStore = defineStore('gallery', () => {
     selectedFiles, enableAiSearch, isAiSearch, aiQuery, isGlobalSearch,
     appVersion, ffmpegAvailable, streamThreshold, updateAvailable,
     // Computed
-    selectedCount, hasSelection, currentFolder,
+    selectedCount, hasSelection, currentFolder, hasMoreFiles,
     // Actions
     initFromServer, toggleFileSelection, clearSelection, selectAll,
+    appendFiles, removeFile, updateFile,
   }
 })

@@ -37,8 +37,10 @@ Forked for personal use and active refactoring. Not intended for upstream contri
 - `src/stores/` — Pinia stores: gallery, preferences (localStorage-backed), ui
 - `src/api/gallery.ts` — typed API service wrapping all 30+ backend endpoints
 - `src/types/gallery.ts` — TypeScript interfaces for all data models
-- `src/components/` — Vue components (in progress)
+- `src/components/lightbox/` — LightboxViewer, LightboxHeader, LightboxMedia (Phase 1, active)
+- `src/composables/` — useLightboxZoom (pan/zoom), useLightboxKeys (keyboard shortcuts)
 - Vite dev proxy configured to Flask backend on port 8189
+- **Tailwind v4**: scoped `<style>` blocks need `@reference "tailwindcss"` for `@apply` to work
 
 ## Dev Setup
 ```bash
@@ -91,16 +93,18 @@ FFmpeg/FFprobe required for video support (thumbnails, storyboards, streaming).
 ### Frontend (New — frontend/)
 - Vue 3 Composition API + TypeScript
 - Pinia for state management
-- Tailwind CSS with theme mapped to existing CSS variables
+- Tailwind CSS v4 with theme mapped to existing CSS variables
 - Async/await throughout, typed API layer
+- Composable return values are plain objects — use `.value` when passing refs as props to child components
+- Legacy↔Vue bridge: `window.__vueOpenLightbox` / `window.__vueCloseLightbox` registered in `App.vue` onMounted
 
 ## Testing
 No automated test suite. Changes verified manually by running the app against a real ComfyUI output folder (~30GB, 180 folders).
 
 ## Refactoring Roadmap
 - **Phase 0** (done): Vue scaffold, Pinia stores, API service, Tailwind — mounts silently
-- **Phase 1** (next): First Vue component replacing a legacy section (e.g., lightbox/viewer)
-- **Phase 2**: Gallery grid as Vue component
+- **Phase 1** (done): Vue lightbox replacing legacy — LightboxViewer/Header/Media + composables
+- **Phase 2** (next): Gallery grid as Vue component
 - **Phase 3**: Sidebar/folder tree as Vue component
 - **Phase 4**: Filter bar as Vue component
 - **Phase 5**: Remove legacy JS, full Vue SPA
@@ -112,6 +116,7 @@ No automated test suite. Changes verified manually by running the app against a 
 - Folders: "Move Folder" option in sidebar context menu
 - Backend: modular package structure with Flask Blueprints
 - Debug: `FLASK_DEBUG=true` enables auto-reload
+- Vue lightbox: semi-transparent backdrop on metadata panel for readability over bright images
 
 ## File Support
 - Images: PNG, JPG, JPEG, WebP (static and animated)

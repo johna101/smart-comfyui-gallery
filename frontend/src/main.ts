@@ -7,7 +7,9 @@ import './style.css'
 // Router stub — routes will be added in Phase 6
 const router = createRouter({
   history: createWebHistory(),
-  routes: [],
+  routes: [
+    { path: '/:pathMatch(.*)*', component: { template: '' } },
+  ],
 })
 
 const app = createApp(App)
