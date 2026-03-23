@@ -5,6 +5,7 @@ import { useUiStore } from '@/stores/ui'
 import { fileApi, mediaApi } from '@/api/gallery'
 import { useLightboxZoom } from '@/composables/useLightboxZoom'
 import { useLightboxKeys } from '@/composables/useLightboxKeys'
+import { useFolderNavigation } from '@/composables/useFolderNavigation'
 import LightboxHeader from './LightboxHeader.vue'
 import LightboxMedia from './LightboxMedia.vue'
 import StoryboardViewer from '@/components/storyboard/StoryboardViewer.vue'
@@ -13,6 +14,7 @@ import type { GalleryFile } from '@/types/gallery'
 const gallery = useGalleryStore()
 const ui = useUiStore()
 const zoom = useLightboxZoom()
+const { navigateToFolder } = useFolderNavigation()
 
 // --- State ---
 const uiHidden = ref(false)
@@ -171,6 +173,11 @@ function storyboard() {
   showStoryboard.value = true
 }
 
+function navigateToFolderFromLightbox(folderKey: string) {
+  close()
+  navigateToFolder(folderKey)
+}
+
 function closeStoryboard() {
   showStoryboard.value = false
   // Resume video if it was playing before
@@ -240,6 +247,7 @@ useLightboxKeys({
           @node-summary="nodeSummary"
           @copy-workflow="copyWorkflow"
           @storyboard="storyboard"
+          @navigate-folder="navigateToFolderFromLightbox"
         />
 
         <!-- Media area -->

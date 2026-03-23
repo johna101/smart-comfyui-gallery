@@ -33,6 +33,8 @@ const preferences = usePreferencesStore()
 
 const folder = computed(() => gallery.folders[props.folderKey])
 const isActive = computed(() => gallery.currentFolderKey === props.folderKey)
+const isHighlighted = computed(() => gallery.highlightedFolderKeys.has(props.folderKey))
+const isFocused = computed(() => gallery.focusedFolderKey === props.folderKey)
 const isExpanded = computed(() => {
   if (props.expandedOverride) {
     return props.expandedOverride.has(props.folderKey)
@@ -137,8 +139,10 @@ function handleContextMenu(e: MouseEvent) {
       class="flex items-center gap-1 px-2 py-1.5 rounded-lg cursor-pointer transition-colors group/item"
       :class="{
         'bg-blue-600/30 text-white': isActive && mode === 'nav',
+        'border-l-2 border-amber-400/60 bg-amber-400/5': isHighlighted && !isActive && mode === 'nav',
         'hover:bg-neutral-800': !isActive || mode === 'picker',
-        'text-neutral-300': !isActive,
+        'text-neutral-300': !isActive && !isHighlighted,
+        'text-amber-200': isHighlighted && !isActive && mode === 'nav',
       }"
       :style="{ paddingLeft: `${depth * 16 + 8}px` }"
     >
@@ -156,6 +160,11 @@ function handleContextMenu(e: MouseEvent) {
         <span class="text-sm shrink-0">&#128193;</span>
         <span class="text-sm truncate">{{ folder?.display_name }}</span>
         <span v-if="folder?.is_mount" class="text-neutral-500 text-xs shrink-0">&#128279;</span>
+        <span
+          v-if="isFocused && mode === 'nav'"
+          class="w-2 h-2 rounded-full bg-amber-400 shrink-0 ml-auto"
+          title="Last selected file is in this folder"
+        />
       </div>
 
       <!-- Picker mode: move-here button -->

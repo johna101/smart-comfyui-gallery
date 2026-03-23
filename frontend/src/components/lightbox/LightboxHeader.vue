@@ -21,17 +21,30 @@ const emit = defineEmits<{
   nodeSummary: []
   copyWorkflow: []
   storyboard: []
+  navigateFolder: [folderKey: string]
 }>()
 
 const gallery = useGalleryStore()
 
 const fileName = computed(() => props.file?.name ?? '')
 
-const folderName = computed(() => {
-  if (!props.file?.path) return 'Main'
-  const parts = props.file.path.replace(/\\/g, '/').split('/')
-  // path is relative — last segment is filename, second-to-last is folder
-  return parts.length > 1 ? parts[parts.length - 2] : 'Main'
+/** Build breadcrumb trail from folder key up to root */
+const folderBreadcrumbs = computed(() => {
+  if (!props.file) return []
+  const folderKey = gallery.folderKeyForFile(props.file)
+  if (!folderKey) return []
+
+  const crumbs: Array<{ key: string; name: string }> = []
+  let current: string | null = folderKey
+  while (current && current !== '_root_') {
+    const f = gallery.folders[current]
+    if (!f) break
+    crumbs.unshift({ key: current, name: f.display_name })
+    current = f.parent ?? null
+  }
+  // Add root
+  crumbs.unshift({ key: '_root_', name: 'Main' })
+  return crumbs
 })
 
 const resolution = computed(() => {
@@ -69,9 +82,16 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
           {{ fileName }}
           <span class="text-white/50 text-sm ml-2">{{ zoomPercent }}%</span>
         </h2>
-        <p class="text-white/60 text-sm truncate">
-          📂 {{ folderName }}
-          <span v-if="resolution" class="ml-3">{{ resolution }}</span>
+        <p class="text-white/60 text-sm truncate flex items-center gap-0.5">
+          <span class="mr-1">📂</span>
+          <template v-for="(crumb, i) in folderBreadcrumbs" :key="crumb.key">
+            <span
+              class="cursor-pointer hover:text-white/90 transition-colors"
+              @click="emit('navigateFolder', crumb.key)"
+            >{{ crumb.name }}</span>
+            <span v-if="i < folderBreadcrumbs.length - 1" class="text-white/30 mx-0.5">/</span>
+          </template>
+          <span v-if="resolution" class="ml-3 text-white/40">{{ resolution }}</span>
         </p>
       </div>
       <button

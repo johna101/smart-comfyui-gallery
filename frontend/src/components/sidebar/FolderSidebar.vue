@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useGalleryStore } from '@/stores/gallery'
 import { usePreferencesStore } from '@/stores/preferences'
 import { useFolderNavigation } from '@/composables/useFolderNavigation'
@@ -29,6 +29,26 @@ onMounted(() => {
     requestAnimationFrame(() => {
       const active = treeContainer.value?.querySelector('.bg-blue-600\\/30')
       active?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    })
+  })
+})
+
+// When focused folder changes (last selected file), expand ancestors and scroll into view
+watch(() => gallery.focusedFolderKey, (folderKey) => {
+  if (!folderKey) return
+
+  // Expand all ancestors so the folder is visible
+  let parent = gallery.folders[folderKey]?.parent
+  while (parent && parent !== '_root_') {
+    preferences.expandedFolderKeys.add(parent)
+    parent = gallery.folders[parent]?.parent ?? null
+  }
+
+  // Wait for DOM update, then scroll the focused folder's dot into view
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      const dot = treeContainer.value?.querySelector('.bg-amber-400')
+      dot?.closest('.folder-node')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
     })
   })
 })

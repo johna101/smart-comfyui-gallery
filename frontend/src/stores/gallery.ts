@@ -50,6 +50,30 @@ export const useGalleryStore = defineStore('gallery', () => {
   const currentFolder = computed(() => folders.value[currentFolderKey.value])
   const hasMoreFiles = computed(() => files.value.length < totalFiles.value)
 
+  // Reverse lookup: folder path → folder key (for mapping files to folders)
+  const folderPathToKey = computed(() => {
+    const map: Record<string, string> = {}
+    for (const [key, info] of Object.entries(folders.value)) {
+      if (info.path) {
+        // Normalize: strip trailing slash, lowercase for comparison
+        const norm = info.path.replace(/[\\/]+$/, '')
+        map[norm] = key
+      }
+    }
+    return map
+  })
+
+  /** Find the folder key that contains a given file */
+  function folderKeyForFile(file: GalleryFile): string | null {
+    if (!file.path) return null
+    // Get directory from file path
+    const sep = file.path.includes('/') ? '/' : '\\'
+    const lastSep = file.path.lastIndexOf(sep)
+    if (lastSep < 0) return '_root_'
+    const dir = file.path.substring(0, lastSep)
+    return folderPathToKey.value[dir] || null
+  }
+
   /** Client-side filtered view of files — instant, no network */
   const filteredFiles = computed(() => {
     const filters = useFilterStore()
@@ -125,6 +149,31 @@ export const useGalleryStore = defineStore('gallery', () => {
 
   const filteredCount = computed(() => filteredFiles.value.length)
 
+  /** Track the last selected file for sidebar focus indicator */
+  const lastSelectedFileId = ref<string | null>(null)
+
+  /** Set of folder keys that contain at least one selected file */
+  const highlightedFolderKeys = computed(() => {
+    const keys = new Set<string>()
+    if (selectedFiles.value.size === 0) return keys
+    for (const fileId of selectedFiles.value) {
+      const file = files.value.find(f => f.id === fileId)
+      if (file) {
+        const key = folderKeyForFile(file)
+        if (key) keys.add(key)
+      }
+    }
+    return keys
+  })
+
+  /** The folder key of the most recently selected file — for focused indicator */
+  const focusedFolderKey = computed(() => {
+    if (!lastSelectedFileId.value) return null
+    const file = files.value.find(f => f.id === lastSelectedFileId.value)
+    if (!file) return null
+    return folderKeyForFile(file)
+  })
+
   // --- Actions ---
   function initFromServer() {
     const data = window.__GALLERY_DATA__
@@ -167,12 +216,14 @@ export const useGalleryStore = defineStore('gallery', () => {
       next.delete(fileId)
     } else {
       next.add(fileId)
+      lastSelectedFileId.value = fileId
     }
     selectedFiles.value = next
   }
 
   function clearSelection() {
     selectedFiles.value = new Set()
+    lastSelectedFileId.value = null
   }
 
   function selectAll() {
@@ -249,10 +300,10 @@ export const useGalleryStore = defineStore('gallery', () => {
     appVersion, ffmpegAvailable, streamThreshold, updateAvailable,
     // Computed
     selectedCount, hasSelection, currentFolder, hasMoreFiles,
-    filteredFiles, filteredCount,
+    filteredFiles, filteredCount, highlightedFolderKeys, focusedFolderKey, lastSelectedFileId,
     loading,
     // Actions
     initFromServer, toggleFileSelection, clearSelection, selectAll,
-    appendFiles, removeFile, updateFile, loadFolder,
+    appendFiles, removeFile, updateFile, loadFolder, folderKeyForFile,
   }
 })

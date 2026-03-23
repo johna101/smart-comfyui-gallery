@@ -115,6 +115,9 @@ function openLightbox(fileId: string) {
 
 <style scoped>
 @reference "tailwindcss";
+.gallery-grid-wrapper {
+  @apply select-none;
+}
 .gallery-focus :deep(.gallery-card) {
   @apply rounded-sm;
 }
