@@ -1,10 +1,31 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useGalleryStore } from '@/stores/gallery'
 import { batchApi } from '@/api/gallery'
+import CompareViewer from '@/components/compare/CompareViewer.vue'
 
 const gallery = useGalleryStore()
 const showMore = ref(false)
+const showCompare = ref(false)
+
+const canCompare = computed(() => {
+  if (gallery.selectedCount !== 2) return false
+  const ids = Array.from(gallery.selectedFiles)
+  const files = ids.map(id => gallery.files.find(f => f.id === id))
+  return files.every(f => f && f.type !== 'video')
+})
+
+const compareFiles = computed(() => {
+  if (!canCompare.value) return { a: null, b: null }
+  const ids = Array.from(gallery.selectedFiles)
+  return {
+    a: gallery.files.find(f => f.id === ids[0]) ?? null,
+    b: gallery.files.find(f => f.id === ids[1]) ?? null,
+  }
+})
+
+// Close compare when selection changes
+watch(() => gallery.selectedCount, () => { showCompare.value = false })
 
 function getSelectedIds(): string[] {
   return Array.from(gallery.selectedFiles)
@@ -107,6 +128,13 @@ function closeMore(e: MouseEvent) {
         <!-- Right: actions -->
         <div class="flex items-center gap-2 relative">
           <button
+            v-if="canCompare"
+            class="sel-btn text-blue-400"
+            title="Compare selected images"
+            @click="showCompare = true"
+          >⚖️</button>
+
+          <button
             class="sel-btn text-yellow-400"
             title="Favorite selected"
             @click="favoriteSelected"
@@ -131,6 +159,13 @@ function closeMore(e: MouseEvent) {
             class="absolute bottom-full right-0 mb-2 bg-neutral-800 border border-neutral-600 rounded-xl shadow-2xl overflow-hidden min-w-[200px]"
             @click.stop
           >
+            <button
+              v-if="canCompare"
+              class="more-item"
+              @click="showCompare = true; showMore = false"
+            >
+              <span>⚖️</span> Compare
+            </button>
             <button class="more-item" @click="copySelected">
               <span>Cc</span> Copy to Folder...
             </button>
@@ -154,6 +189,14 @@ function closeMore(e: MouseEvent) {
         </div>
       </div>
     </Transition>
+
+    <!-- Compare overlay -->
+    <CompareViewer
+      v-if="showCompare && compareFiles.a && compareFiles.b"
+      :file-a="compareFiles.a"
+      :file-b="compareFiles.b"
+      @close="showCompare = false"
+    />
   </Teleport>
 </template>
 
