@@ -5458,9 +5458,20 @@
         body.focus-mode .item-info,
         body.focus-mode .selection-checkmark,
         body.focus-mode .file-metadata,
-        body.focus-mode .file-scanned-time,
-        body.focus-mode .workflow-badge { 
-            display: none !important;   
+        body.focus-mode .file-scanned-time {
+            display: none !important;
+        }
+
+        /* Workflow indicator: small green dot in focus mode */
+        body.focus-mode .workflow-badge {
+            font-size: 0 !important;
+            padding: 0 !important;
+            width: 20px !important;
+            height: 20px !important;
+            border-radius: 50% !important;
+            background: var(--workflow-color) !important;
+            pointer-events: none;
+            opacity: 0.85;
         }
 
         /* BASE STATE: 100% Scale, 100% Opacity, No filters */
@@ -6506,6 +6517,7 @@
                 <div class="filter-group">
                     <label>Options</label>
                     <div class="filter-group-inline"><input type="checkbox" name="favorites" id="favorites-check" value="true" {% if request.args.get('favorites') == 'true' %}checked{% endif %}><label for="favorites-check">⭐ Favorites Only</label></div>
+                    <div class="filter-group-inline"><input type="checkbox" name="hide_favorites" id="hide-favorites-check" value="true" {% if request.args.get('hide_favorites') == 'true' %}checked{% endif %}><label for="hide-favorites-check">⭐ Hide Favorites</label></div>
                     <div class="filter-group-inline"><input type="checkbox" name="no_workflow" id="no-workflow-check" value="true" {% if request.args.get('no_workflow') == 'true' %}checked{% endif %}><label for="no-workflow-check">🚫 No Workflow</label></div>
                      <!-- No AI Caption (Only if AI is enabled) -->
                     {% if enable_ai_search %}
@@ -7722,6 +7734,7 @@
                                 <button onclick="showFolderInfo(event, '${folderKey}')">ℹ️ Info</button>
                                 ${aiBtn}
                                 ${!folder.is_mount ? `<button onclick="renameFolder(event, '${folderKey}', '${folderDisplayName}')">✏️ Rename</button>` : ''}
+                                ${!folder.is_mount ? `<button onclick="moveFolder(event, '${folderKey}', '${folderDisplayName}')">📁 Move</button>` : ''}
                                 ${deleteOption}
                             </div>
                         </div>`;
@@ -8468,6 +8481,24 @@
                 .catch(handleError);
             }
         }
+        function moveFolder(event, folderKey, folderName) {
+            event.stopPropagation();
+            // Store the folder being moved and reuse the existing drop panel
+            window._movingFolderKey = folderKey;
+            window._movingFolderName = folderName;
+            currentDropAction = 'move_folder';
+
+            const titleEl = document.querySelector('#drop-zone-panel h3');
+            if (titleEl) titleEl.textContent = `📁 Move "${folderName}" to:`;
+
+            currentSort.move = { ...currentSort.nav };
+            document.getElementById('drag-drop-overlay').classList.add('visible');
+            document.getElementById('drop-zone-panel').classList.add('visible');
+            updateSortButtonsUI('move');
+            document.getElementById('move-folder-tree').innerHTML = buildFolderTreeHTML('_root_', true);
+            filterTree('move-folder-tree', currentSearch.move, false);
+        }
+
         async function deleteFolder(event, folderKey, folderName) {
             event.stopPropagation();
             const confirmed = await smartConfirm(
@@ -8863,28 +8894,45 @@
         }
 
         // Updated Confirm Logic
-        function confirmMoveToFolder(folderKey) { 
-            if (!selectedFiles || selectedFiles.size === 0) { 
-                showNotification('No files selected.', 'warning'); 
-                return; 
-            } 
-            
+        function confirmMoveToFolder(folderKey) {
+            if (currentDropAction === 'move_folder') {
+                // Move Folder Action
+                const movingKey = window._movingFolderKey;
+                if (!movingKey) return;
+                fetch(`/galleryout/move_folder/${movingKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ destination_folder: folderKey })
+                })
+                .then(handleGenericResponse)
+                .catch(handleError);
+                window._movingFolderKey = null;
+                window._movingFolderName = null;
+                hideDropZone();
+                return;
+            }
+
+            if (!selectedFiles || selectedFiles.size === 0) {
+                showNotification('No files selected.', 'warning');
+                return;
+            }
+
             if (currentDropAction === 'copy') {
                 // Copy Action
-                performBatchAction('/galleryout/copy_batch', { 
-                    file_ids: [...selectedFiles], 
+                performBatchAction('/galleryout/copy_batch', {
+                    file_ids: [...selectedFiles],
                     destination_folder: folderKey,
                     keep_favorites: copyKeepFavorites
                 });
             } else {
                 // Move Action
-                performBatchAction('/galleryout/move_batch', { 
-                    file_ids: [...selectedFiles], 
-                    destination_folder: folderKey 
-                }); 
+                performBatchAction('/galleryout/move_batch', {
+                    file_ids: [...selectedFiles],
+                    destination_folder: folderKey
+                });
             }
-            
-            hideDropZone(); 
+
+            hideDropZone();
         }
         async function deleteSelected() {
             const count = selectedFiles.size;
@@ -10661,6 +10709,14 @@
                     }
                     // If only one is present, the backend will handle the >= or <= logic automatically
                 });
+            }
+
+            // --- MUTUAL EXCLUSION: Favorites Only / Hide Favorites ---
+            const favCheck = document.getElementById('favorites-check');
+            const hideFavCheck = document.getElementById('hide-favorites-check');
+            if (favCheck && hideFavCheck) {
+                favCheck.addEventListener('change', () => { if (favCheck.checked) hideFavCheck.checked = false; });
+                hideFavCheck.addEventListener('change', () => { if (hideFavCheck.checked) favCheck.checked = false; });
             }
             
             // Initialize Auto-Refresh Logic

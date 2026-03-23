@@ -191,4 +191,5 @@ def run_app():
     print(f"👉 Access URL: {Colors.CYAN}{Colors.BOLD}http://127.0.0.1:{SERVER_PORT}/galleryout/{Colors.RESET}")
     print(f"   (Press CTRL+C to stop)")
 
-    app.run(host='0.0.0.0', port=SERVER_PORT, debug=False)
+    debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
+    app.run(host='0.0.0.0', port=SERVER_PORT, debug=debug_mode)

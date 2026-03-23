@@ -353,6 +353,94 @@ def rename_folder(folder_key):
         return jsonify({'status': 'error', 'message': f'Error: {e}'}), 500
 
 
+@folders_bp.route('/move_folder/<string:folder_key>', methods=['POST'])
+def move_folder(folder_key):
+    """Move a folder to a new parent directory."""
+    if folder_key in PROTECTED_FOLDER_KEYS:
+        return jsonify({'status': 'error', 'message': 'This folder cannot be moved.'}), 403
+
+    dest_key = request.json.get('destination_folder')
+    if not dest_key:
+        return jsonify({'status': 'error', 'message': 'No destination folder provided.'}), 400
+
+    folders = get_dynamic_folder_config()
+    if folder_key not in folders:
+        return jsonify({'status': 'error', 'message': 'Folder not found.'}), 404
+    if dest_key not in folders:
+        return jsonify({'status': 'error', 'message': 'Destination folder not found.'}), 404
+
+    old_folder_path = folders[folder_key]['path']
+    folder_name = folders[folder_key]['display_name']
+    dest_path = folders[dest_key]['path']
+
+    # Prevent moving into itself or a subfolder of itself
+    dest_norm = os.path.normpath(dest_path).replace('\\', '/')
+    old_norm = os.path.normpath(old_folder_path).replace('\\', '/')
+    if dest_norm == old_norm or dest_norm.startswith(old_norm + '/'):
+        return jsonify({'status': 'error', 'message': 'Cannot move a folder into itself.'}), 400
+
+    # Construct new path
+    new_folder_path = f"{dest_path}/{folder_name}" if '/' in dest_path else os.path.join(dest_path, folder_name)
+
+    if os.path.exists(os.path.normpath(new_folder_path)):
+        return jsonify({'status': 'error', 'message': f'A folder named "{folder_name}" already exists in the destination.'}), 400
+
+    try:
+        with get_db_connection() as conn:
+            all_files_cursor = conn.execute("SELECT id, path FROM files")
+
+            update_data = []
+            ids_to_clean_collisions = []
+
+            is_windows = (os.name == 'nt')
+            check_old = old_folder_path.lower() if is_windows else old_folder_path
+
+            for row in all_files_cursor:
+                current_path = row['path']
+                check_curr = current_path.lower() if is_windows else current_path
+
+                if check_curr.startswith(check_old):
+                    # Preserve relative path structure within the moved folder
+                    suffix = current_path[len(old_folder_path):]
+                    new_file_path = new_folder_path + suffix
+
+                    new_id = hashlib.md5(new_file_path.encode()).hexdigest()
+                    update_data.append((new_id, new_file_path, row['id']))
+                    ids_to_clean_collisions.append(new_id)
+
+            # Cleanup ghost records
+            if ids_to_clean_collisions:
+                placeholders = ','.join(['?'] * len(ids_to_clean_collisions))
+                conn.execute(f"DELETE FROM files WHERE id IN ({placeholders})", ids_to_clean_collisions)
+
+            # Physical move
+            shutil.move(os.path.normpath(old_folder_path), os.path.normpath(new_folder_path))
+
+            # DB update
+            if update_data:
+                conn.executemany("UPDATE files SET id = ?, path = ? WHERE id = ?", update_data)
+
+            # Update watch list
+            watched_folders = conn.execute("SELECT path FROM ai_watched_folders").fetchall()
+            for row in watched_folders:
+                w_path = row['path']
+                w_check = w_path.lower() if is_windows else w_path
+
+                if w_check == check_old or w_check.startswith(check_old):
+                    suffix = w_path[len(old_folder_path):]
+                    new_w_path = new_folder_path + suffix
+                    conn.execute("UPDATE ai_watched_folders SET path = ? WHERE path = ?", (new_w_path, w_path))
+
+            conn.commit()
+
+        get_dynamic_folder_config(force_refresh=True)
+        return jsonify({'status': 'success', 'message': f'Folder "{folder_name}" moved successfully.'})
+
+    except Exception as e:
+        print(f"Move Folder Error: {e}")
+        return jsonify({'status': 'error', 'message': f'Error: {e}'}), 500
+
+
 @folders_bp.route('/delete_folder/<string:folder_key>', methods=['POST'])
 def delete_folder(folder_key):
     if folder_key in PROTECTED_FOLDER_KEYS: return jsonify({'status': 'error', 'message': 'This folder cannot be deleted.'}), 403

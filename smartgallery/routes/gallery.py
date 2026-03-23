@@ -101,6 +101,7 @@ def gallery_view(folder_key):
                     params.append(f"%{kw}%")
 
             if request.args.get('favorites') == 'true': conditions.append("is_favorite = 1")
+            if request.args.get('hide_favorites') == 'true': conditions.append("is_favorite = 0")
             if request.args.get('no_workflow') == 'true': conditions.append("has_workflow = 0")
             if request.args.get('no_ai_caption') == 'true':
                 conditions.append("(ai_caption IS NULL OR ai_caption = '')")
@@ -177,6 +178,7 @@ def gallery_view(folder_key):
     if selected_exts: active_filters_count += 1
     if selected_prefixes: active_filters_count += 1
     if request.args.get('favorites') == 'true': active_filters_count += 1
+    if request.args.get('hide_favorites') == 'true': active_filters_count += 1
     if request.args.get('no_workflow') == 'true': active_filters_count += 1
     if ENABLE_AI_SEARCH and request.args.get('no_ai_caption') == 'true': active_filters_count += 1
 
