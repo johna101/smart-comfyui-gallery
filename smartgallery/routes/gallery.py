@@ -45,8 +45,13 @@ def _build_folder_view(folder_key, args):
     wf_prompt = args.get('workflow_prompt', '').strip()
     start_date = args.get('start_date', '').strip()
     end_date = args.get('end_date', '').strip()
+    # Support both repeated params (?extension=png&extension=jpg) and comma-separated (?extensions=png,jpg)
     selected_exts = args.getlist('extension') if hasattr(args, 'getlist') else args.get('extension', [])
+    if not selected_exts and args.get('extensions'):
+        selected_exts = [e.strip() for e in args.get('extensions', '').split(',') if e.strip()]
     selected_prefixes = args.getlist('prefix') if hasattr(args, 'getlist') else args.get('prefix', [])
+    if not selected_prefixes and args.get('prefixes'):
+        selected_prefixes = [p.strip() for p in args.get('prefixes', '').split(',') if p.strip()]
 
     is_ai_search = False
     ai_query_text = ""

@@ -4,6 +4,7 @@ import { useGalleryStore } from '@/stores/gallery'
 import { useUiStore } from '@/stores/ui'
 import { usePreferencesStore } from '@/stores/preferences'
 import FolderSidebar from '@/components/sidebar/FolderSidebar.vue'
+import GalleryToolbar from '@/components/toolbar/GalleryToolbar.vue'
 import LightboxViewer from '@/components/lightbox/LightboxViewer.vue'
 import GalleryGrid from '@/components/gallery/GalleryGrid.vue'
 import SelectionBar from '@/components/gallery/SelectionBar.vue'
@@ -39,6 +40,13 @@ onMounted(() => {
   hide('drag-drop-overlay')
   hide('drop-zone-panel')
 
+  // Hide legacy toolbars (replaced by Vue GalleryToolbar)
+  document.querySelectorAll('.toolbar-container').forEach(el => {
+    ;(el as HTMLElement).style.display = 'none'
+  })
+  // Hide legacy search/filter panel
+  hide('desktop-search-panel')
+
   // --- Legacy JS bridge ---
   ;(window as any).__vueOpenLightbox = (fileId: string) => {
     const index = gallery.files.findIndex(f => f.id === fileId)
@@ -64,8 +72,11 @@ onMounted(() => {
 <template>
   <div id="vue-root" class="fixed inset-0 flex overflow-hidden z-[100] bg-neutral-950">
     <FolderSidebar />
-    <div class="flex-1 overflow-y-auto">
-      <GalleryGrid />
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <GalleryToolbar />
+      <div class="flex-1 overflow-y-auto">
+        <GalleryGrid />
+      </div>
     </div>
     <SelectionBar />
     <LightboxViewer />
