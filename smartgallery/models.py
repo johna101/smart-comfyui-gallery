@@ -2,15 +2,28 @@
 # SQLite connection, schema creation, and migrations.
 
 import sqlite3
+import threading
 from smartgallery.config import DATABASE_FILE, DB_SCHEMA_VERSION
+
+# Thread-local connection cache — avoids opening a new connection per request
+_local = threading.local()
 
 
 def get_db_connection():
-    """Open a SQLite connection with WAL mode for concurrent reads."""
+    """Get a SQLite connection, reusing per-thread for performance."""
+    conn = getattr(_local, 'conn', None)
+    if conn is not None:
+        try:
+            conn.execute('SELECT 1')  # Test if still alive
+            return conn
+        except Exception:
+            conn = None
+
     conn = sqlite3.connect(DATABASE_FILE, timeout=60)
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA journal_mode=WAL;')
     conn.execute('PRAGMA synchronous=NORMAL;')
+    _local.conn = conn
     return conn
 
 
@@ -70,6 +83,11 @@ def init_db(conn=None):
 
         conn.execute('CREATE INDEX IF NOT EXISTS idx_queue_status ON ai_search_queue(status);')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_results_session ON ai_search_results(session_id);')
+
+        # File indexes for fast folder queries and sorting
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_files_mtime ON files(mtime);')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_files_name ON files(name);')
 
         conn.execute('''
             CREATE TABLE IF NOT EXISTS ai_indexing_queue (

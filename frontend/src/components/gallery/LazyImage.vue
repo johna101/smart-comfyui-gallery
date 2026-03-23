@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { useThumbnailCache } from '@/composables/useThumbnailCache'
 
 const props = defineProps<{
   src: string
   alt?: string
 }>()
 
+const thumbCache = useThumbnailCache()
 const blobUrl = ref('')
 let abortController: AbortController | null = null
 let observer: IntersectionObserver | null = null
@@ -13,16 +15,23 @@ let visibilityTimer: ReturnType<typeof setTimeout> | null = null
 const containerRef = ref<HTMLElement | null>(null)
 
 onMounted(() => {
+  // Check cache first — instant display if we've seen this thumbnail before
+  const cached = thumbCache.get(props.src)
+  if (cached) {
+    blobUrl.value = cached
+    return // No observer needed
+  }
+
   if (!containerRef.value) return
 
   observer = new IntersectionObserver((entries) => {
     const entry = entries[0]
     if (entry?.isIntersecting) {
-      // Start timer — only fetch if still visible after 100ms
+      // Start timer — only fetch if still visible after 150ms
       visibilityTimer = setTimeout(() => {
         loadImage()
         observer?.disconnect()
-      }, 150)
+      }, 0)
     } else {
       // Scrolled away before timer fired — cancel
       if (visibilityTimer) {
@@ -40,7 +49,10 @@ async function loadImage() {
   try {
     const res = await fetch(props.src, { signal: abortController.signal })
     const blob = await res.blob()
-    blobUrl.value = URL.createObjectURL(blob)
+    const url = URL.createObjectURL(blob)
+    blobUrl.value = url
+    // Store in shared cache — survives folder navigation
+    thumbCache.set(props.src, url)
   } catch (e) {
     if ((e as Error).name !== 'AbortError') {
       console.warn('Thumbnail load failed:', props.src)
@@ -57,10 +69,7 @@ onBeforeUnmount(() => {
   // Cancel in-flight fetch
   abortController?.abort()
   observer?.disconnect()
-  // Release blob URL
-  if (blobUrl.value) {
-    URL.revokeObjectURL(blobUrl.value)
-  }
+  // Don't revoke blob URL — it's in the shared cache for reuse
 })
 </script>
 

@@ -26,7 +26,8 @@ def _build_folder_view(folder_key, args):
     Returns a dict with all the data needed to render a folder view,
     or None if the folder_key is invalid.
     """
-    folders = get_dynamic_folder_config(force_refresh=True)
+    # Use cached folder config for navigation — only refresh on folder mutations or explicit request
+    folders = get_dynamic_folder_config(force_refresh=args.get('force_refresh') == 'true')
     if folder_key not in folders:
         return None
 
@@ -124,39 +125,34 @@ def _build_folder_view(folder_key, args):
                 params.extend([f"{p.strip()}_%" for p in selected_prefixes if p.strip()])
                 if p_cond: conditions.append(f"({' OR '.join(p_cond)})")
 
+            # --- PATH FILTERING IN SQL (fast) ---
+            # Normalize folder path for SQL matching
+            target_norm = folder_path.replace('\\', '/')
+            if not target_norm.endswith('/'):
+                target_norm += '/'
+
+            if not is_global_search:
+                if is_recursive:
+                    # All files under this folder (any depth)
+                    conditions.append("REPLACE(path, '\\', '/') LIKE ?")
+                    params.append(target_norm + '%')
+                else:
+                    # Only direct children — path starts with folder/ but has no further /
+                    # Match: folder/filename.png but not folder/sub/filename.png
+                    conditions.append("REPLACE(path, '\\', '/') LIKE ?")
+                    params.append(target_norm + '%')
+                    conditions.append("REPLACE(path, '\\', '/') NOT LIKE ?")
+                    params.append(target_norm + '%/%')
+
             sort_by = 'name' if args.get('sort_by') == 'name' else 'mtime'
             sort_order = "ASC" if args.get('sort_order', 'desc').lower() == 'asc' else "DESC"
             where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
-            query = f"SELECT * FROM files {where_clause} ORDER BY {sort_by} {sort_order}"
+            # Exclude ai_embedding blob from results
+            query = f"SELECT id, path, mtime, name, type, duration, dimensions, has_workflow, is_favorite, size, last_scanned, workflow_files, workflow_prompt, ai_last_scanned, ai_caption, ai_error FROM files {where_clause} ORDER BY {sort_by} {sort_order}"
             rows = conn.execute(query, params).fetchall()
 
-            # --- ULTRA-ROBUST MIXED-PATH FILTERING ---
-            final_files = []
-
-            def safe_path_norm(p):
-                if not p: return ""
-                return os.path.normpath(str(p).replace('\\', '/')).replace('\\', '/').lower().rstrip('/')
-
-            target_norm = safe_path_norm(folder_path)
-
-            for row in rows:
-                f_data = dict(row)
-                if 'ai_embedding' in f_data: del f_data['ai_embedding']
-
-                f_path_norm = safe_path_norm(f_data['path'])
-                f_dir_norm = safe_path_norm(os.path.dirname(f_path_norm))
-
-                if is_global_search:
-                    final_files.append(f_data)
-                elif is_recursive:
-                    if f_path_norm.startswith(target_norm + '/'):
-                        final_files.append(f_data)
-                else:
-                    if f_dir_norm == target_norm:
-                        final_files.append(f_data)
-
-            state.gallery_view_cache = final_files
+            state.gallery_view_cache = [dict(row) for row in rows]
 
     # 4. Final Metadata
     active_filters_count = 0
@@ -202,7 +198,8 @@ def _build_folder_view(folder_key, args):
         'totalFiles': len(state.gallery_view_cache),
         'totalFolderFiles': total_folder_files,
         'totalDbFiles': total_db_files,
-        'folders': folders,
+        # Skip folders if client already has them (saves ~500KB per request)
+        'folders': None if args.get('skip_folders') == 'true' else folders,
         'currentFolderKey': folder_key,
         'currentFolderInfo': current_folder_info,
         'breadcrumbs': breadcrumbs,

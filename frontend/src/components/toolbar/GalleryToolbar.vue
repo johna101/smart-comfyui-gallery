@@ -93,9 +93,9 @@ function onRescanComplete() {
   navigateToFolder(gallery.currentFolderKey)
 }
 
-// Refresh
+// Refresh — force_refresh tells server to rescan the directory tree
 function refreshFolder() {
-  navigateToFolder(gallery.currentFolderKey)
+  navigateToFolder(gallery.currentFolderKey, { force_refresh: 'true' })
 }
 
 // File count display

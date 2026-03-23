@@ -266,9 +266,18 @@ export const useGalleryStore = defineStore('gallery', () => {
     // Clear selection on folder change
     selectedFiles.value = new Set()
     try {
-      const data = await navApi.fetchFolder(folderKey, params)
+      // Skip folders in response if we already have them (saves ~500KB)
+      const hasFolders = Object.keys(folders.value).length > 0
+      const skipFolders = hasFolders && !params?.force_refresh
+      const fetchParams = skipFolders
+        ? { ...params, skip_folders: 'true' }
+        : params
+      const data = await navApi.fetchFolder(folderKey, fetchParams)
       files.value = data.files
-      folders.value = data.folders as FoldersMap
+      // Only update folders if server sent them
+      if (data.folders) {
+        folders.value = data.folders as FoldersMap
+      }
       currentFolderKey.value = data.currentFolderKey
       currentFolderInfo.value = data.currentFolderInfo as FolderInfo
       breadcrumbs.value = data.breadcrumbs as Breadcrumb[]

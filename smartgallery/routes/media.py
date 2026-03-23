@@ -119,16 +119,43 @@ def get_node_summary(file_id):
         return jsonify({'status': 'error', 'message': str(e)})
 
 
+# In-memory cache: file_id → thumbnail path (avoids DB + glob on every request)
+_thumb_path_cache: dict[str, str] = {}
+
 @media_bp.route('/thumbnail/<string:file_id>')
 def serve_thumbnail(file_id):
-    info = get_file_info_from_db(file_id)
+    # Fast path: check in-memory cache first
+    cached_path = _thumb_path_cache.get(file_id)
+    if cached_path and os.path.exists(cached_path):
+        response = send_file(cached_path)
+        response.headers['Cache-Control'] = 'public, max-age=86400, immutable'
+        return response
+
+    # Only fetch what we need, not the full row (avoids ai_embedding blob)
+    with get_db_connection() as conn:
+        row = conn.execute("SELECT path, mtime, type FROM files WHERE id = ?", (file_id,)).fetchone()
+    if not row:
+        abort(404)
+    info = dict(row)
     filepath, mtime = info['path'], info['mtime']
     file_hash = hashlib.md5((filepath + str(mtime)).encode()).hexdigest()
-    existing_thumbnails = glob.glob(os.path.join(THUMBNAIL_CACHE_DIR, f"{file_hash}.*"))
-    if existing_thumbnails: return send_file(existing_thumbnails[0])
+
+    # Check common extensions directly instead of glob
+    for ext in ('.jpg', '.png', '.webp', '.gif'):
+        candidate = os.path.join(THUMBNAIL_CACHE_DIR, file_hash + ext)
+        if os.path.exists(candidate):
+            _thumb_path_cache[file_id] = candidate
+            response = send_file(candidate)
+            response.headers['Cache-Control'] = 'public, max-age=86400, immutable'
+            return response
+
     print(f"WARN: Thumbnail not found for {os.path.basename(filepath)}, generating...")
     cache_path = create_thumbnail(filepath, file_hash, info['type'])
-    if cache_path and os.path.exists(cache_path): return send_file(cache_path)
+    if cache_path and os.path.exists(cache_path):
+        _thumb_path_cache[file_id] = cache_path
+        response = send_file(cache_path)
+        response.headers['Cache-Control'] = 'public, max-age=86400, immutable'
+        return response
     return "Thumbnail generation failed", 404
 
 
