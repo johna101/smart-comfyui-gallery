@@ -1,16 +1,16 @@
-import { onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useGalleryStore } from '@/stores/gallery'
 import { usePreferencesStore } from '@/stores/preferences'
 
 export function useFolderNavigation() {
   const gallery = useGalleryStore()
   const preferences = usePreferencesStore()
+  const router = useRouter()
 
-  async function navigateToFolder(folderKey: string, params?: Record<string, string> | boolean, pushHistory = true) {
+  async function navigateToFolder(folderKey: string, params?: Record<string, string> | boolean) {
     // Support old signature: navigateToFolder(key, pushHistory)
     let queryParams: Record<string, string> | undefined
     if (typeof params === 'boolean') {
-      pushHistory = params
       queryParams = undefined
     } else {
       queryParams = params
@@ -24,33 +24,15 @@ export function useFolderNavigation() {
       parent = folders[parent]?.parent ?? null
     }
 
+    // Load data, then update URL
     await gallery.loadFolder(folderKey, queryParams)
 
-    if (pushHistory) {
-      const qs = queryParams ? '?' + new URLSearchParams(queryParams).toString() : ''
-      const url = `/galleryout/view/${folderKey}${qs}`
-      history.pushState({ folderKey, params: queryParams }, '', url)
-    }
+    router.push({
+      name: 'folder',
+      params: { folderKey },
+      query: queryParams,
+    })
   }
-
-  function handlePopState(event: PopStateEvent) {
-    const folderKey = event.state?.folderKey
-    if (folderKey) {
-      navigateToFolder(folderKey, event.state?.params, false)
-    }
-  }
-
-  onMounted(() => {
-    // Set initial history state so back works from the first page
-    const currentKey = gallery.currentFolderKey
-    history.replaceState({ folderKey: currentKey }, '', `/galleryout/view/${currentKey}`)
-
-    window.addEventListener('popstate', handlePopState)
-  })
-
-  onUnmounted(() => {
-    window.removeEventListener('popstate', handlePopState)
-  })
 
   return { navigateToFolder }
 }

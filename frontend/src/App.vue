@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useGalleryStore } from '@/stores/gallery'
 import FolderSidebar from '@/components/sidebar/FolderSidebar.vue'
 import GalleryToolbar from '@/components/toolbar/GalleryToolbar.vue'
@@ -8,9 +9,31 @@ import GalleryGrid from '@/components/gallery/GalleryGrid.vue'
 import SelectionBar from '@/components/gallery/SelectionBar.vue'
 
 const gallery = useGalleryStore()
+const router = useRouter()
+const route = useRoute()
+
+// Handle back/forward navigation — when URL changes externally
+watch(
+  () => route.params.folderKey as string,
+  (newKey, oldKey) => {
+    if (newKey && newKey !== oldKey && newKey !== gallery.currentFolderKey) {
+      const queryParams = Object.keys(route.query).length
+        ? Object.fromEntries(Object.entries(route.query).map(([k, v]) => [k, String(v)]))
+        : undefined
+      gallery.loadFolder(newKey, queryParams)
+    }
+  }
+)
 
 onMounted(() => {
   gallery.initFromServer()
+
+  // Replace the initial URL to match what Flask served
+  router.replace({
+    name: 'folder',
+    params: { folderKey: gallery.currentFolderKey },
+  })
+
   console.log(
     '%c🖼️ SmartGallery Vue',
     'color: #28a045; font-weight: bold; font-size: 14px;',
