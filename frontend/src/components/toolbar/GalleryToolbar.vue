@@ -2,12 +2,14 @@
 import { ref, computed } from 'vue'
 import { useGalleryStore } from '@/stores/gallery'
 import { usePreferencesStore } from '@/stores/preferences'
+import { useFilterStore } from '@/stores/filters'
 import { useFolderNavigation } from '@/composables/useFolderNavigation'
 import FilterPanel from './FilterPanel.vue'
 import RescanProgress from './RescanProgress.vue'
 
 const gallery = useGalleryStore()
 const preferences = usePreferencesStore()
+const filters = useFilterStore()
 const { navigateToFolder } = useFolderNavigation()
 
 const showFilters = ref(false)
@@ -98,15 +100,13 @@ function refreshFolder() {
 
 // File count display
 const fileCountLabel = computed(() => {
-  const t = gallery.totalFiles
-  const label = `${t} File${t !== 1 ? 's' : ''}`
-  if (gallery.isAiSearch || gallery.isGlobalSearch) {
-    return `🔍 ${label} (of ${gallery.totalDbFiles} Total)`
+  const total = gallery.files.length
+  const filtered = gallery.filteredCount
+
+  if (filters.activeCount > 0) {
+    return `📂 ${filtered} of ${total} files`
   }
-  if (gallery.totalFiles !== gallery.totalFolderFiles) {
-    return `📂 ${label} (of ${gallery.totalFolderFiles})`
-  }
-  return `📂 ${label}`
+  return `📂 ${total} File${total !== 1 ? 's' : ''}`
 })
 </script>
 
@@ -161,16 +161,16 @@ const fileCountLabel = computed(() => {
       <!-- Filters toggle -->
       <button
         class="toolbar-btn"
-        :class="{ 'toolbar-btn-active': showFilters || gallery.activeFiltersCount > 0 }"
+        :class="{ 'toolbar-btn-active': showFilters || filters.activeCount > 0 }"
         @click="showFilters = !showFilters"
       >
         🔍 Filters
-        <span v-if="gallery.activeFiltersCount > 0" class="text-xs ml-1">
-          ({{ gallery.activeFiltersCount }})
+        <span v-if="filters.activeCount > 0" class="text-xs ml-1">
+          ({{ filters.activeCount }})
           <span
             class="ml-1 text-white/50 hover:text-white cursor-pointer"
             title="Clear all filters"
-            @click.stop="navigateToFolder(gallery.currentFolderKey)"
+            @click.stop="filters.reset()"
           >✕</span>
         </span>
       </button>
@@ -240,7 +240,6 @@ const fileCountLabel = computed(() => {
     <FilterPanel
       v-if="showFilters"
       @close="showFilters = false"
-      @apply="showFilters = false"
     />
   </div>
 </template>

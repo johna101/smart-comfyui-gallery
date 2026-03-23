@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { GalleryFile, FoldersMap, FolderInfo, Breadcrumb } from '@/types/gallery'
 import { navApi } from '@/api/gallery'
+import { useFilterStore } from '@/stores/filters'
 
 export const useGalleryStore = defineStore('gallery', () => {
   // --- Core data ---
@@ -48,6 +49,81 @@ export const useGalleryStore = defineStore('gallery', () => {
   const hasSelection = computed(() => selectedFiles.value.size > 0)
   const currentFolder = computed(() => folders.value[currentFolderKey.value])
   const hasMoreFiles = computed(() => files.value.length < totalFiles.value)
+
+  /** Client-side filtered view of files — instant, no network */
+  const filteredFiles = computed(() => {
+    const filters = useFilterStore()
+
+    // No active filters → return all files (fast path)
+    if (filters.activeCount === 0) return files.value
+
+    let result = files.value
+
+    // Name search (case-insensitive)
+    if (filters.search) {
+      const q = filters.search.toLowerCase()
+      result = result.filter(f => f.name.toLowerCase().includes(q))
+    }
+
+    // Workflow files search (comma-separated keywords, case-insensitive)
+    if (filters.workflowFiles) {
+      const keywords = filters.workflowFiles.split(',').map(k => k.trim().toLowerCase()).filter(Boolean)
+      result = result.filter(f =>
+        keywords.every(kw => (f.workflow_files || '').toLowerCase().includes(kw))
+      )
+    }
+
+    // Prompt search (comma-separated keywords, case-insensitive)
+    if (filters.workflowPrompt) {
+      const keywords = filters.workflowPrompt.split(',').map(k => k.trim().toLowerCase()).filter(Boolean)
+      result = result.filter(f =>
+        keywords.every(kw => (f.workflow_prompt || '').toLowerCase().includes(kw))
+      )
+    }
+
+    // Extensions
+    if (filters.selectedExtensions.length > 0) {
+      const exts = new Set(filters.selectedExtensions.map(e => e.toLowerCase().replace(/^\./, '')))
+      result = result.filter(f => {
+        const ext = f.name.split('.').pop()?.toLowerCase() || ''
+        return exts.has(ext)
+      })
+    }
+
+    // Prefixes
+    if (filters.selectedPrefixes.length > 0) {
+      result = result.filter(f =>
+        filters.selectedPrefixes.some(prefix => f.name.startsWith(prefix + '_'))
+      )
+    }
+
+    // Favorites
+    if (filters.showFavorites) {
+      result = result.filter(f => f.is_favorite)
+    }
+    if (filters.hideFavorites) {
+      result = result.filter(f => !f.is_favorite)
+    }
+
+    // No workflow
+    if (filters.noWorkflow) {
+      result = result.filter(f => !f.has_workflow)
+    }
+
+    // Date range
+    if (filters.startDate) {
+      const ts = new Date(filters.startDate).getTime() / 1000
+      result = result.filter(f => f.mtime >= ts)
+    }
+    if (filters.endDate) {
+      const ts = new Date(filters.endDate).getTime() / 1000 + 86399
+      result = result.filter(f => f.mtime <= ts)
+    }
+
+    return result
+  })
+
+  const filteredCount = computed(() => filteredFiles.value.length)
 
   // --- Actions ---
   function initFromServer() {
@@ -100,7 +176,7 @@ export const useGalleryStore = defineStore('gallery', () => {
   }
 
   function selectAll() {
-    selectedFiles.value = new Set(files.value.map(f => f.id))
+    selectedFiles.value = new Set(filteredFiles.value.map(f => f.id))
   }
 
   function appendFiles(newFiles: GalleryFile[]) {
@@ -173,6 +249,7 @@ export const useGalleryStore = defineStore('gallery', () => {
     appVersion, ffmpegAvailable, streamThreshold, updateAvailable,
     // Computed
     selectedCount, hasSelection, currentFolder, hasMoreFiles,
+    filteredFiles, filteredCount,
     loading,
     // Actions
     initFromServer, toggleFileSelection, clearSelection, selectAll,

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import type { GalleryFile } from '@/types/gallery'
 import { useGalleryStore } from '@/stores/gallery'
 import { fileApi, mediaApi } from '@/api/gallery'
+import LazyImage from './LazyImage.vue'
 
 const props = defineProps<{
   file: GalleryFile
@@ -112,19 +113,15 @@ async function deleteFile(e: MouseEvent) {
       :class="aspectClass"
       @click="handleThumbnailClick"
     >
-      <img
+      <LazyImage
         v-if="!isVideo"
-        loading="lazy"
         :src="thumbnailUrl"
         :alt="file.name"
-        class="w-full h-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
       />
-      <video
+      <LazyImage
         v-else
-        :poster="thumbnailUrl"
-        preload="none"
-        muted
-        class="w-full h-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+        :src="thumbnailUrl"
+        :alt="file.name"
       />
 
       <!-- Workflow badge / green dot -->

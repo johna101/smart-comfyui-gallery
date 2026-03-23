@@ -1,10 +1,12 @@
 import { useRouter } from 'vue-router'
 import { useGalleryStore } from '@/stores/gallery'
 import { usePreferencesStore } from '@/stores/preferences'
+import { useFilterStore } from '@/stores/filters'
 
 export function useFolderNavigation() {
   const gallery = useGalleryStore()
   const preferences = usePreferencesStore()
+  const filters = useFilterStore()
   const router = useRouter()
 
   async function navigateToFolder(folderKey: string, params?: Record<string, string> | boolean) {
@@ -23,6 +25,9 @@ export function useFolderNavigation() {
       preferences.expandedFolderKeys.add(parent)
       parent = folders[parent]?.parent ?? null
     }
+
+    // Reset client-side filters on folder change
+    filters.reset()
 
     // Load data, then update URL
     await gallery.loadFolder(folderKey, queryParams)

@@ -198,7 +198,7 @@ def _build_folder_view(folder_key, args):
     breadcrumbs.reverse()
 
     return {
-        'files': state.gallery_view_cache[:PAGE_SIZE],
+        'files': state.gallery_view_cache if args.get('no_pagination') == 'true' else state.gallery_view_cache[:PAGE_SIZE],
         'totalFiles': len(state.gallery_view_cache),
         'totalFolderFiles': total_folder_files,
         'totalDbFiles': total_db_files,

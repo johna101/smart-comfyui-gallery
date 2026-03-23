@@ -24,10 +24,10 @@ const mediaRef = ref<InstanceType<typeof LightboxMedia> | null>(null)
 // --- Computed ---
 const currentFile = computed<GalleryFile | null>(() => {
   if (!ui.lightboxOpen || ui.lightboxIndex < 0) return null
-  return gallery.files[ui.lightboxIndex] ?? null
+  return gallery.filteredFiles[ui.lightboxIndex] ?? null
 })
 
-const fileCount = computed(() => gallery.files.length)
+const fileCount = computed(() => gallery.filteredFiles.length)
 
 const positionLabel = computed(() => {
   if (ui.lightboxIndex < 0) return ''
@@ -56,7 +56,7 @@ function showNotification(msg: string) {
 function navigate(direction: number) {
   if (fileCount.value === 0) return
   const newIndex = (ui.lightboxIndex + direction + fileCount.value) % fileCount.value
-  ui.openLightbox(gallery.files[newIndex].id, newIndex)
+  ui.openLightbox(gallery.filteredFiles[newIndex].id, newIndex)
 }
 
 // --- Actions ---
@@ -75,19 +75,18 @@ async function deleteFile() {
 
   try {
     await fileApi.deleteFile(file.id)
-    const idx = ui.lightboxIndex
 
-    // Remove from store
-    gallery.files.splice(idx, 1)
+    // Remove from underlying store (filteredFiles recomputes automatically)
+    gallery.removeFile(file.id)
 
-    if (gallery.files.length === 0) {
+    if (gallery.filteredFiles.length === 0) {
       close()
       return
     }
 
     // Navigate to next (or wrap to last)
-    const newIdx = idx >= gallery.files.length ? gallery.files.length - 1 : idx
-    ui.openLightbox(gallery.files[newIdx].id, newIdx)
+    const idx = Math.min(ui.lightboxIndex, gallery.filteredFiles.length - 1)
+    ui.openLightbox(gallery.filteredFiles[idx].id, idx)
     showNotification('File deleted')
   } catch (e) {
     showNotification('Delete failed')
