@@ -59,8 +59,9 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
 <template>
   <div
     v-show="!uiHidden"
-    class="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-black/80 to-transparent px-4 py-3"
+    class="absolute top-0 left-0 z-20 p-3 max-w-[90%]"
   >
+    <div class="bg-black/50 backdrop-blur-sm rounded-xl px-4 py-3">
     <!-- Title row -->
     <div class="flex items-center justify-between mb-2">
       <div class="min-w-0 flex-1">
@@ -176,6 +177,7 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
         title="Toggle UI (H)"
         @click="emit('toggleUi')"
       >👁️</button>
+    </div>
     </div>
   </div>
 </template>
