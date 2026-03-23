@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted } from 'vue'
 import { useGalleryStore } from '@/stores/gallery'
 import { useUiStore } from '@/stores/ui'
 import { usePreferencesStore } from '@/stores/preferences'
+import FolderSidebar from '@/components/sidebar/FolderSidebar.vue'
 import LightboxViewer from '@/components/lightbox/LightboxViewer.vue'
 import GalleryGrid from '@/components/gallery/GalleryGrid.vue'
 import SelectionBar from '@/components/gallery/SelectionBar.vue'
@@ -21,16 +22,24 @@ onMounted(() => {
   console.log(`  Files: ${gallery.files.length}`)
   console.log(`  Current folder: ${gallery.currentFolderKey}`)
 
-  // --- Hide legacy gallery elements ---
-  const legacyGallery = document.getElementById('gallery-container')
-  const legacyLoadMore = document.getElementById('load-more-container')
-  const legacySelectionBar = document.getElementById('selection-bar')
-  if (legacyGallery) legacyGallery.style.display = 'none'
-  if (legacyLoadMore) legacyLoadMore.style.display = 'none'
-  if (legacySelectionBar) legacySelectionBar.style.display = 'none'
+  // --- Hide legacy elements replaced by Vue ---
+  const hide = (id: string) => {
+    const el = document.getElementById(id)
+    if (el) el.style.display = 'none'
+  }
+  hide('gallery-container')
+  hide('load-more-container')
+  hide('selection-bar')
+
+  // Hide legacy sidebar
+  const legacySidebar = document.querySelector('.sidebar') as HTMLElement
+  if (legacySidebar) legacySidebar.style.display = 'none'
+
+  // Hide legacy drop zone (replaced by Vue move dialog)
+  hide('drag-drop-overlay')
+  hide('drop-zone-panel')
 
   // --- Legacy JS bridge ---
-  // Expose function for legacy openLightbox to call into Vue
   ;(window as any).__vueOpenLightbox = (fileId: string) => {
     const index = gallery.files.findIndex(f => f.id === fileId)
     if (index >= 0) {
@@ -44,7 +53,6 @@ onMounted(() => {
     ui.closeLightbox()
   }
 
-  // Bridge: legacy focus mode toggle → Vue preferences
   ;(window as any).__vueSetFocusMode = (active: boolean) => {
     preferences.focusMode = active
   }
@@ -54,8 +62,11 @@ onMounted(() => {
 </script>
 
 <template>
-  <div id="vue-root">
-    <GalleryGrid />
+  <div id="vue-root" class="fixed inset-0 flex overflow-hidden z-[100] bg-neutral-950">
+    <FolderSidebar />
+    <div class="flex-1 overflow-y-auto">
+      <GalleryGrid />
+    </div>
     <SelectionBar />
     <LightboxViewer />
   </div>

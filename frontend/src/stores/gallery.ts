@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { GalleryFile, FoldersMap, FolderInfo, Breadcrumb } from '@/types/gallery'
+import { navApi } from '@/api/gallery'
 
 export const useGalleryStore = defineStore('gallery', () => {
   // --- Core data ---
@@ -122,6 +123,45 @@ export const useGalleryStore = defineStore('gallery', () => {
     if (file) Object.assign(file, patch)
   }
 
+  const loading = ref(false)
+
+  async function loadFolder(folderKey: string, params?: Record<string, string>) {
+    loading.value = true
+    // Update key + ancestors immediately so sidebar can collapse before API returns
+    currentFolderKey.value = folderKey
+    const newAncestors: string[] = []
+    let curr: string | null = folderKey
+    while (curr && folders.value[curr]) {
+      newAncestors.push(curr)
+      curr = folders.value[curr].parent ?? null
+    }
+    ancestorKeys.value = newAncestors
+    // Clear selection on folder change
+    selectedFiles.value = new Set()
+    try {
+      const data = await navApi.fetchFolder(folderKey, params)
+      files.value = data.files
+      folders.value = data.folders as FoldersMap
+      currentFolderKey.value = data.currentFolderKey
+      currentFolderInfo.value = data.currentFolderInfo as FolderInfo
+      breadcrumbs.value = data.breadcrumbs as Breadcrumb[]
+      ancestorKeys.value = data.ancestorKeys
+      totalFiles.value = data.totalFiles
+      totalFolderFiles.value = data.totalFolderFiles
+      totalDbFiles.value = data.totalDbFiles
+      availableExtensions.value = data.availableExtensions
+      availablePrefixes.value = data.availablePrefixes
+      activeFiltersCount.value = data.activeFiltersCount
+      currentScope.value = data.currentScope
+      isRecursive.value = data.isRecursive
+      appVersion.value = data.appVersion
+      ffmpegAvailable.value = data.ffmpegAvailable
+      streamThreshold.value = data.streamThreshold
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     // State
     folders, files, currentFolderKey, currentFolderInfo,
@@ -133,8 +173,9 @@ export const useGalleryStore = defineStore('gallery', () => {
     appVersion, ffmpegAvailable, streamThreshold, updateAvailable,
     // Computed
     selectedCount, hasSelection, currentFolder, hasMoreFiles,
+    loading,
     // Actions
     initFromServer, toggleFileSelection, clearSelection, selectAll,
-    appendFiles, removeFile, updateFile,
+    appendFiles, removeFile, updateFile, loadFolder,
   }
 })

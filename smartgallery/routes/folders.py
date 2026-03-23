@@ -363,7 +363,7 @@ def move_folder(folder_key):
     if not dest_key:
         return jsonify({'status': 'error', 'message': 'No destination folder provided.'}), 400
 
-    folders = get_dynamic_folder_config()
+    folders = get_dynamic_folder_config(force_refresh=True)
     if folder_key not in folders:
         return jsonify({'status': 'error', 'message': 'Folder not found.'}), 404
     if dest_key not in folders:

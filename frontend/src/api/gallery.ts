@@ -92,6 +92,33 @@ export const folderApi = {
 }
 
 // --- Media ---
+// --- Navigation ---
+export const navApi = {
+  /** Fetch folder data for SPA navigation (no page reload) */
+  fetchFolder: (folderKey: string, params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : ''
+    return request<{
+      files: GalleryFile[]
+      totalFiles: number
+      totalFolderFiles: number
+      totalDbFiles: number
+      folders: Record<string, unknown>
+      currentFolderKey: string
+      currentFolderInfo: Record<string, unknown>
+      breadcrumbs: Array<{ key: string; display_name: string }>
+      ancestorKeys: string[]
+      availableExtensions: string[]
+      availablePrefixes: string[]
+      activeFiltersCount: number
+      currentScope: string
+      isRecursive: boolean
+      appVersion: string
+      ffmpegAvailable: boolean
+      streamThreshold: number
+    }>(`${BASE}/api/folder/${folderKey}${qs}`)
+  },
+}
+
 export const mediaApi = {
   getNodeSummary: (fileId: string) =>
     request<{ status: string; summary: unknown[]; meta: Record<string, unknown> }>(`${BASE}/node_summary/${fileId}`),

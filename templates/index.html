@@ -6548,7 +6548,6 @@
     
         <div id="gallery-anchor"></div>
         <main class="gallery-container" id="gallery-container"></main>
-        <div id="vue-app"></div>
         <!-- Load More Button with Logic Check -->
         <div id="load-more-container" {% if total_files <= files|length %}style="display:none;"{% endif %}>
             <button id="load-more-btn">
@@ -7375,8 +7374,8 @@
         <button class="close-btn" onclick="closeSbZoom()" style="position:absolute; top:20px; right:20px; font-size:2rem; z-index:4005;">×</button>
     </div>
 
-    <!-- Vue 3 mount point — moved to main-content area for gallery grid layout -->
-    <!-- <div id="vue-app"></div> relocated to inside main-content -->
+    <!-- Vue 3 mount point — full-page layout (sidebar + grid) -->
+    <div id="vue-app"></div>
 
     <!-- Consolidated data bridge: Flask → Vue (and legacy JS) -->
     <script>

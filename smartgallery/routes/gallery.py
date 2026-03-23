@@ -21,34 +21,32 @@ from smartgallery.folders import (
 gallery_bp = Blueprint('gallery', __name__, url_prefix='/galleryout')
 
 
-@gallery_bp.route('/')
-def gallery_redirect_base():
-    return redirect(url_for('gallery.gallery_view', folder_key='_root_'))
-
-
-@gallery_bp.route('/view/<string:folder_key>')
-def gallery_view(folder_key):
+def _build_folder_view(folder_key, args):
+    """Shared logic for gallery_view (HTML) and api_folder (JSON).
+    Returns a dict with all the data needed to render a folder view,
+    or None if the folder_key is invalid.
+    """
     folders = get_dynamic_folder_config(force_refresh=True)
     if folder_key not in folders:
-        return redirect(url_for('gallery.gallery_view', folder_key='_root_'))
+        return None
 
     current_folder_info = folders[folder_key]
     folder_path = current_folder_info['path']
 
     # 1. Capture All Request Parameters
-    is_recursive = request.args.get('recursive', 'false').lower() == 'true'
-    search_scope = request.args.get('scope', 'local')
+    is_recursive = args.get('recursive', 'false').lower() == 'true'
+    search_scope = args.get('scope', 'local')
     is_global_search = (search_scope == 'global')
-    ai_session_id = request.args.get('ai_session_id')
+    ai_session_id = args.get('ai_session_id')
 
     # Text filters
-    search_term = request.args.get('search', '').strip()
-    wf_files = request.args.get('workflow_files', '').strip()
-    wf_prompt = request.args.get('workflow_prompt', '').strip()
-    start_date = request.args.get('start_date', '').strip()
-    end_date = request.args.get('end_date', '').strip()
-    selected_exts = request.args.getlist('extension')
-    selected_prefixes = request.args.getlist('prefix')
+    search_term = args.get('search', '').strip()
+    wf_files = args.get('workflow_files', '').strip()
+    wf_prompt = args.get('workflow_prompt', '').strip()
+    start_date = args.get('start_date', '').strip()
+    end_date = args.get('end_date', '').strip()
+    selected_exts = args.getlist('extension') if hasattr(args, 'getlist') else args.get('extension', [])
+    selected_prefixes = args.getlist('prefix') if hasattr(args, 'getlist') else args.get('prefix', [])
 
     is_ai_search = False
     ai_query_text = ""
@@ -67,12 +65,11 @@ def gallery_view(folder_key):
                         WHERE r.session_id = ? ORDER BY r.score DESC
                     ''', (ai_session_id,)).fetchall()
 
-                    # FIX: Clean up BLOB data (ai_embedding) which is not JSON serializable
                     files_list = []
                     for row in rows:
                         d = dict(row)
                         if 'ai_embedding' in d:
-                            del d['ai_embedding'] # Remove binary data
+                            del d['ai_embedding']
                         files_list.append(d)
 
                     state.gallery_view_cache = files_list
@@ -80,12 +77,11 @@ def gallery_view(folder_key):
                 print(f"AI Search Error: {e}")
                 is_ai_search = False
 
-    # --- PATH B: STANDARD VIEW / SEARCH (Cross-Platform Robust) ---
+    # --- PATH B: STANDARD VIEW / SEARCH ---
     if not is_ai_search:
         with get_db_connection() as conn:
             conditions, params = [], []
 
-            # 2. Apply Metadata Filters first (Generic fields)
             if search_term:
                 conditions.append("name LIKE ?")
                 params.append(f"%{search_term}%")
@@ -100,10 +96,10 @@ def gallery_view(folder_key):
                     conditions.append("workflow_prompt LIKE ?")
                     params.append(f"%{kw}%")
 
-            if request.args.get('favorites') == 'true': conditions.append("is_favorite = 1")
-            if request.args.get('hide_favorites') == 'true': conditions.append("is_favorite = 0")
-            if request.args.get('no_workflow') == 'true': conditions.append("has_workflow = 0")
-            if request.args.get('no_ai_caption') == 'true':
+            if args.get('favorites') == 'true': conditions.append("is_favorite = 1")
+            if args.get('hide_favorites') == 'true': conditions.append("is_favorite = 0")
+            if args.get('no_workflow') == 'true': conditions.append("has_workflow = 0")
+            if args.get('no_ai_caption') == 'true':
                 conditions.append("(ai_caption IS NULL OR ai_caption = '')")
 
             if start_date:
@@ -123,10 +119,8 @@ def gallery_view(folder_key):
                 params.extend([f"{p.strip()}_%" for p in selected_prefixes if p.strip()])
                 if p_cond: conditions.append(f"({' OR '.join(p_cond)})")
 
-            # 3. Execution: We fetch files matching metadata, then filter paths in Python
-            # This is the only way to guarantee 100% slash-agnostic behavior
-            sort_by = 'name' if request.args.get('sort_by') == 'name' else 'mtime'
-            sort_order = "ASC" if request.args.get('sort_order', 'desc').lower() == 'asc' else "DESC"
+            sort_by = 'name' if args.get('sort_by') == 'name' else 'mtime'
+            sort_order = "ASC" if args.get('sort_order', 'desc').lower() == 'asc' else "DESC"
             where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
             query = f"SELECT * FROM files {where_clause} ORDER BY {sort_by} {sort_order}"
@@ -135,12 +129,8 @@ def gallery_view(folder_key):
             # --- ULTRA-ROBUST MIXED-PATH FILTERING ---
             final_files = []
 
-            # Helper to normalize ANY path (mixed slashes, case, trailing)
             def safe_path_norm(p):
                 if not p: return ""
-                # 1. Force all backslashes to forward slashes immediately
-                # 2. Lowercase for cross-platform case-insensitivity
-                # 3. Clean up and remove trailing slashes
                 return os.path.normpath(str(p).replace('\\', '/')).replace('\\', '/').lower().rstrip('/')
 
             target_norm = safe_path_norm(folder_path)
@@ -149,26 +139,21 @@ def gallery_view(folder_key):
                 f_data = dict(row)
                 if 'ai_embedding' in f_data: del f_data['ai_embedding']
 
-                # Normalize the DB path which might be mixed (e.g., c:/folder\img.png)
                 f_path_norm = safe_path_norm(f_data['path'])
                 f_dir_norm = safe_path_norm(os.path.dirname(f_path_norm))
 
                 if is_global_search:
                     final_files.append(f_data)
                 elif is_recursive:
-                    # Check if the file is inside the target folder tree
-                    # Adding a '/' ensures we don't match 'folder_backup' when looking for 'folder'
                     if f_path_norm.startswith(target_norm + '/'):
                         final_files.append(f_data)
                 else:
-                    # Strict match: must be exactly in the target folder
                     if f_dir_norm == target_norm:
                         final_files.append(f_data)
 
             state.gallery_view_cache = final_files
 
-    # 4. Final Metadata for Template
-    # --- RIGOROUS FILTER COUNTING LOGIC ---
+    # 4. Final Metadata
     active_filters_count = 0
     if search_term: active_filters_count += 1
     if wf_files: active_filters_count += 1
@@ -177,32 +162,25 @@ def gallery_view(folder_key):
     if end_date: active_filters_count += 1
     if selected_exts: active_filters_count += 1
     if selected_prefixes: active_filters_count += 1
-    if request.args.get('favorites') == 'true': active_filters_count += 1
-    if request.args.get('hide_favorites') == 'true': active_filters_count += 1
-    if request.args.get('no_workflow') == 'true': active_filters_count += 1
-    if ENABLE_AI_SEARCH and request.args.get('no_ai_caption') == 'true': active_filters_count += 1
+    if args.get('favorites') == 'true': active_filters_count += 1
+    if args.get('hide_favorites') == 'true': active_filters_count += 1
+    if args.get('no_workflow') == 'true': active_filters_count += 1
+    if ENABLE_AI_SEARCH and args.get('no_ai_caption') == 'true': active_filters_count += 1
 
-    # Scope/Recursive Logic:
     if is_global_search:
-        # Global search is a major state change, counts as 1 filter
         active_filters_count += 1
     elif is_recursive:
-        # Recursive only counts as a filter if we are in Local mode (modifying the default folder view)
         active_filters_count += 1
 
-    # Important: count files correctly on disk for the badge
     total_folder_files, _, _ = scan_folder_and_extract_options(folder_path, recursive=is_recursive)
-    # Initialize DB Total
     total_db_files = 0
     with get_db_connection() as conn_opts:
-        # NEW: Get the grand total of files in the database (for Global/AI context)
         try:
             total_db_files = conn_opts.execute("SELECT COUNT(*) FROM files").fetchone()[0]
         except:
             total_db_files = 0
 
         scope_for_opts = 'global' if is_global_search else 'local'
-        # FIX: Added recursive=is_recursive to ensure dropdowns match current view on load
         extensions, prefixes, pfx_limit = get_filter_options_from_db(conn_opts, scope_for_opts, folder_path, recursive=is_recursive)
 
     breadcrumbs, ancestor_keys = [], set()
@@ -213,36 +191,88 @@ def gallery_view(folder_key):
         ancestor_keys.add(curr)
         curr = f_info.get('parent')
     breadcrumbs.reverse()
+
+    return {
+        'files': state.gallery_view_cache[:PAGE_SIZE],
+        'totalFiles': len(state.gallery_view_cache),
+        'totalFolderFiles': total_folder_files,
+        'totalDbFiles': total_db_files,
+        'folders': folders,
+        'currentFolderKey': folder_key,
+        'currentFolderInfo': current_folder_info,
+        'breadcrumbs': breadcrumbs,
+        'ancestorKeys': list(ancestor_keys),
+        'availableExtensions': extensions,
+        'availablePrefixes': prefixes,
+        'prefixLimitReached': pfx_limit,
+        'selectedExtensions': selected_exts,
+        'selectedPrefixes': selected_prefixes,
+        'protectedFolderKeys': list(PROTECTED_FOLDER_KEYS),
+        'showFavorites': args.get('favorites', 'false').lower() == 'true',
+        'hideFavorites': args.get('hide_favorites', 'false').lower() == 'true',
+        'enableAiSearch': ENABLE_AI_SEARCH,
+        'isAiSearch': is_ai_search,
+        'aiQuery': ai_query_text,
+        'isGlobalSearch': is_global_search,
+        'activeFiltersCount': active_filters_count,
+        'currentScope': search_scope,
+        'isRecursive': is_recursive,
+        'appVersion': APP_VERSION,
+        'ffmpegAvailable': state.FFPROBE_EXECUTABLE_PATH is not None,
+        'streamThreshold': STREAM_THRESHOLD_BYTES,
+    }
+
+
+@gallery_bp.route('/')
+def gallery_redirect_base():
+    return redirect(url_for('gallery.gallery_view', folder_key='_root_'))
+
+
+@gallery_bp.route('/view/<string:folder_key>')
+def gallery_view(folder_key):
+    data = _build_folder_view(folder_key, request.args)
+    if data is None:
+        return redirect(url_for('gallery.gallery_view', folder_key='_root_'))
+
     return render_template('index.html',
-                           files=state.gallery_view_cache[:PAGE_SIZE],
-                           total_files=len(state.gallery_view_cache),
-                           total_folder_files=total_folder_files,
-                           total_db_files=total_db_files,
-                           folders=folders,
-                           current_folder_key=folder_key,
-                           current_folder_info=current_folder_info,
-                           breadcrumbs=breadcrumbs,
-                           ancestor_keys=list(ancestor_keys),
-                           available_extensions=extensions,
-                           available_prefixes=prefixes,
-                           prefix_limit_reached=pfx_limit,
-                           selected_extensions=selected_exts,
-                           selected_prefixes=selected_prefixes,
-                           protected_folder_keys=list(PROTECTED_FOLDER_KEYS),
-                           show_favorites=request.args.get('favorites', 'false').lower() == 'true',
-                           enable_ai_search=ENABLE_AI_SEARCH,
-                           is_ai_search=is_ai_search,
-                           ai_query=ai_query_text,
-                           is_global_search=is_global_search,
-                           active_filters_count=active_filters_count,
-                           current_scope=search_scope,
-                           is_recursive=is_recursive,
-                           app_version=APP_VERSION,
+                           files=data['files'],
+                           total_files=data['totalFiles'],
+                           total_folder_files=data['totalFolderFiles'],
+                           total_db_files=data['totalDbFiles'],
+                           folders=data['folders'],
+                           current_folder_key=data['currentFolderKey'],
+                           current_folder_info=data['currentFolderInfo'],
+                           breadcrumbs=data['breadcrumbs'],
+                           ancestor_keys=data['ancestorKeys'],
+                           available_extensions=data['availableExtensions'],
+                           available_prefixes=data['availablePrefixes'],
+                           prefix_limit_reached=data['prefixLimitReached'],
+                           selected_extensions=data['selectedExtensions'],
+                           selected_prefixes=data['selectedPrefixes'],
+                           protected_folder_keys=data['protectedFolderKeys'],
+                           show_favorites=data['showFavorites'],
+                           enable_ai_search=data['enableAiSearch'],
+                           is_ai_search=data['isAiSearch'],
+                           ai_query=data['aiQuery'],
+                           is_global_search=data['isGlobalSearch'],
+                           active_filters_count=data['activeFiltersCount'],
+                           current_scope=data['currentScope'],
+                           is_recursive=data['isRecursive'],
+                           app_version=data['appVersion'],
                            github_url=GITHUB_REPO_URL,
                            update_available=state.UPDATE_AVAILABLE,
                            remote_version=state.REMOTE_VERSION,
-                           ffmpeg_available=(state.FFPROBE_EXECUTABLE_PATH is not None),
-                           stream_threshold=STREAM_THRESHOLD_BYTES)
+                           ffmpeg_available=data['ffmpegAvailable'],
+                           stream_threshold=data['streamThreshold'])
+
+
+@gallery_bp.route('/api/folder/<string:folder_key>')
+def api_folder(folder_key):
+    """JSON API for SPA-like folder navigation. Returns same data as gallery_view."""
+    data = _build_folder_view(folder_key, request.args)
+    if data is None:
+        return jsonify({'error': 'Folder not found'}), 404
+    return jsonify(data)
 
 
 @gallery_bp.route('/load_more')
