@@ -74,6 +74,20 @@ function moveFolder() {
   emit('moveFolder', props.folderKey)
   emit('close')
 }
+
+async function createSubfolder() {
+  const name = prompt('New folder name:')
+  if (!name) { emit('close'); return }
+
+  try {
+    await folderApi.createFolder(props.folderKey, name)
+    await gallery.loadFolder(gallery.currentFolderKey)
+  } catch (e) {
+    console.error('Create folder failed:', e)
+    alert('Failed to create folder.')
+  }
+  emit('close')
+}
 </script>
 
 <template>
@@ -83,6 +97,9 @@ function moveFolder() {
       :style="{ left: `${x}px`, top: `${y}px` }"
       @click.stop
     >
+      <button class="ctx-item" @click="createSubfolder">
+        <span>&#128194;</span> New Folder
+      </button>
       <button class="ctx-item" @click="renameFolder" v-if="!isMount">
         <span>&#9999;</span> Rename
       </button>

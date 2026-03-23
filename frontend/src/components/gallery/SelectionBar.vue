@@ -1,12 +1,18 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useGalleryStore } from '@/stores/gallery'
 import { batchApi } from '@/api/gallery'
+import { useFolderNavigation } from '@/composables/useFolderNavigation'
 import CompareViewer from '@/components/compare/CompareViewer.vue'
+import FolderPickerDialog from '@/components/ui/FolderPickerDialog.vue'
 
 const gallery = useGalleryStore()
+const { navigateToFolder } = useFolderNavigation()
 const showMore = ref(false)
 const showCompare = ref(false)
+const showMoveDialog = ref(false)
+const showCopyDialog = ref(false)
+const zipProgress = ref('')
 
 const canCompare = computed(() => {
   if (gallery.selectedCount !== 2) return false
@@ -65,45 +71,81 @@ async function deleteSelected() {
 }
 
 function moveSelected() {
-  // Bridge to legacy folder picker
-  const ids = getSelectedIds()
-  window.dispatchEvent(new CustomEvent('vue:moveFiles', { detail: { fileIds: ids } }))
   showMore.value = false
+  showMoveDialog.value = true
 }
 
 function copySelected() {
-  const ids = getSelectedIds()
-  window.dispatchEvent(new CustomEvent('vue:copyFiles', { detail: { fileIds: ids } }))
   showMore.value = false
+  showCopyDialog.value = true
+}
+
+async function handleMoveConfirm(destKey: string) {
+  const ids = getSelectedIds()
+  showMoveDialog.value = false
+  try {
+    await batchApi.moveBatch(ids, destKey)
+    ids.forEach(id => gallery.removeFile(id))
+    gallery.clearSelection()
+  } catch (e) {
+    console.error('Batch move failed:', e)
+  }
+}
+
+async function handleCopyConfirm(destKey: string) {
+  const ids = getSelectedIds()
+  showCopyDialog.value = false
+  try {
+    await batchApi.copyBatch(ids, destKey, true)
+    // Refresh to show any new files if copying within same folder
+    navigateToFolder(gallery.currentFolderKey)
+    gallery.clearSelection()
+  } catch (e) {
+    console.error('Batch copy failed:', e)
+  }
 }
 
 async function downloadZip() {
   const ids = getSelectedIds()
   showMore.value = false
+  zipProgress.value = 'Preparing...'
   try {
     const prepRes = await batchApi.prepareZip(ids)
-    if (!prepRes.job_id) return
+    if (!prepRes.job_id) { zipProgress.value = ''; return }
 
-    // Poll for completion
+    // Poll for completion — backend returns 'ready' when done
     const poll = setInterval(async () => {
-      const status = await batchApi.checkZipStatus(prepRes.job_id)
-      if (status.status === 'complete' && status.download_url) {
+      try {
+        const status = await batchApi.checkZipStatus(prepRes.job_id) as any
+        if ((status.status === 'ready' || status.status === 'complete') && status.download_url) {
+          clearInterval(poll)
+          zipProgress.value = ''
+          window.open(status.download_url, '_blank')
+        } else if (status.status === 'error') {
+          clearInterval(poll)
+          zipProgress.value = ''
+          console.error('Zip failed:', status.message)
+        } else {
+          zipProgress.value = `Zipping... ${status.current || ''}/${status.total || ''}`
+        }
+      } catch {
         clearInterval(poll)
-        window.open(status.download_url, '_blank')
-      } else if (status.status === 'error') {
-        clearInterval(poll)
-        console.error('Zip failed:', status.message)
+        zipProgress.value = ''
       }
-    }, 1000)
+    }, 500)
   } catch (e) {
+    zipProgress.value = ''
     console.error('Download zip failed:', e)
   }
 }
 
+// Close dropdown on outside click
 function closeMore(e: MouseEvent) {
-  // Close dropdown if clicked outside
   if (showMore.value) showMore.value = false
 }
+
+onMounted(() => document.addEventListener('click', closeMore))
+onUnmounted(() => document.removeEventListener('click', closeMore))
 </script>
 
 <template>
@@ -123,6 +165,7 @@ function closeMore(e: MouseEvent) {
           <span class="text-white text-sm font-medium">
             {{ gallery.selectedCount }} file{{ gallery.selectedCount !== 1 ? 's' : '' }} selected
           </span>
+          <span v-if="zipProgress" class="text-xs text-white/50 ml-2">{{ zipProgress }}</span>
         </div>
 
         <!-- Right: actions -->
@@ -196,6 +239,22 @@ function closeMore(e: MouseEvent) {
       :file-a="compareFiles.a"
       :file-b="compareFiles.b"
       @close="showCompare = false"
+    />
+
+    <!-- Move to folder dialog -->
+    <FolderPickerDialog
+      v-if="showMoveDialog"
+      title="&#10132; Move Files to Folder"
+      @select="handleMoveConfirm"
+      @close="showMoveDialog = false"
+    />
+
+    <!-- Copy to folder dialog -->
+    <FolderPickerDialog
+      v-if="showCopyDialog"
+      title="&#128203; Copy Files to Folder"
+      @select="handleCopyConfirm"
+      @close="showCopyDialog = false"
     />
   </Teleport>
 </template>

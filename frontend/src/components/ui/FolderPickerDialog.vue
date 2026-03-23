@@ -1,20 +1,26 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { useGalleryStore } from '@/stores/gallery'
-import { folderApi } from '@/api/gallery'
-import FolderTree from './FolderTree.vue'
+import FolderTree from '@/components/sidebar/FolderTree.vue'
 
-const props = defineProps<{
-  folderKey: string
-}>()
+const props = withDefaults(defineProps<{
+  title?: string
+  excludeKeys?: string[]
+}>(), {
+  title: 'Select Folder',
+  excludeKeys: () => [],
+})
 
 const emit = defineEmits<{
+  select: [folderKey: string]
   close: []
-  navigate: [folderKey: string]
 }>()
 
-const gallery = useGalleryStore()
-const folderName = gallery.folders[props.folderKey]?.display_name || props.folderKey
+const searchFilter = ref('')
+const sortKey = ref('name')
+const sortDir = ref('asc')
+const busy = ref(false)
+// Isolated expand state so picker doesn't affect sidebar
+const pickerExpanded = ref(new Set<string>(['_root_']))
 
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
@@ -23,48 +29,22 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
-onMounted(() => document.addEventListener('keydown', handleKeydown))
-onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
-const searchFilter = ref('')
-const sortKey = ref('name')
-const sortDir = ref('asc')
-const moving = ref(false)
-const pickerExpanded = ref(new Set<string>(['_root_']))
+onMounted(() => document.addEventListener('keydown', handleKeydown, true))
+onUnmounted(() => document.removeEventListener('keydown', handleKeydown, true))
 
-function toggleSort() {
-  if (sortKey.value === 'name') {
-    sortKey.value = 'mtime'
-    sortDir.value = 'desc'
-  } else {
-    sortKey.value = 'name'
-    sortDir.value = 'asc'
-  }
-}
-
-async function handlePick(destinationKey: string) {
-  if (destinationKey === props.folderKey) return
-  moving.value = true
-  try {
-    await folderApi.moveFolder(props.folderKey, destinationKey)
-    // Refresh folder data
-    await gallery.loadFolder(gallery.currentFolderKey)
-    emit('close')
-  } catch (e) {
-    console.log('Move folder failed:', e)
-    alert('Move failed! The folder may not be movable to that location.')
-  } finally {
-    moving.value = false
-  }
+function handlePick(folderKey: string) {
+  if (props.excludeKeys.includes(folderKey)) return
+  emit('select', folderKey)
 }
 </script>
 
 <template>
   <Teleport to="body">
-    <div class="fixed inset-0 z-[5000] flex items-center justify-center bg-black/60" @click.self="emit('close')">
-      <div class="bg-neutral-900 border border-neutral-700 rounded-2xl shadow-2xl w-[400px] max-h-[80vh] flex flex-col">
+    <div class="fixed inset-0 z-[6000] flex items-center justify-center bg-black/60" @click.self="emit('close')">
+      <div class="bg-neutral-900 border border-neutral-700 rounded-2xl shadow-2xl w-[400px] max-h-[80vh] flex flex-col relative">
         <!-- Header -->
         <div class="px-4 py-3 border-b border-neutral-700 text-center">
-          <h3 class="text-white font-medium">&#10132; Move "{{ folderName }}" to:</h3>
+          <h3 class="text-white font-medium">{{ title }}</h3>
         </div>
 
         <!-- Search + Sort -->
@@ -96,7 +76,7 @@ async function handlePick(destinationKey: string) {
               folder-key="_root_"
               :depth="0"
               mode="picker"
-              :exclude-key="folderKey"
+              :exclude-key="excludeKeys[0] || ''"
               :search-filter="searchFilter"
               :sort-key="sortKey"
               :sort-dir="sortDir"
@@ -107,13 +87,13 @@ async function handlePick(destinationKey: string) {
         </div>
 
         <!-- Loading overlay -->
-        <div v-if="moving" class="absolute inset-0 bg-black/50 flex items-center justify-center rounded-2xl">
+        <div v-if="busy" class="absolute inset-0 bg-black/50 flex items-center justify-center rounded-2xl">
           <div class="w-8 h-8 border-2 border-neutral-600 border-t-white rounded-full animate-spin" />
         </div>
 
         <!-- Cancel -->
         <button
-          class="w-full py-3 text-center text-red-400 hover:bg-red-900/30 border-t border-neutral-700 transition-colors"
+          class="w-full py-3 text-center text-red-400 hover:bg-red-900/30 border-t border-neutral-700 transition-colors cursor-pointer"
           @click="emit('close')"
         >&#10005; Cancel</button>
       </div>

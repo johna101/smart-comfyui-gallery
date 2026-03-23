@@ -11,6 +11,7 @@ const props = withDefaults(defineProps<{
   searchFilter?: string
   sortKey?: string
   sortDir?: string
+  expandedOverride?: Set<string> | null
 }>(), {
   depth: 0,
   mode: 'nav',
@@ -18,6 +19,7 @@ const props = withDefaults(defineProps<{
   searchFilter: '',
   sortKey: 'name',
   sortDir: 'asc',
+  expandedOverride: null,
 })
 
 const emit = defineEmits<{
@@ -31,10 +33,13 @@ const preferences = usePreferencesStore()
 
 const folder = computed(() => gallery.folders[props.folderKey])
 const isActive = computed(() => gallery.currentFolderKey === props.folderKey)
-const isExpanded = computed(() =>
-  preferences.expandedFolderKeys.has(props.folderKey) ||
-  gallery.ancestorKeys.includes(props.folderKey)
-)
+const isExpanded = computed(() => {
+  if (props.expandedOverride) {
+    return props.expandedOverride.has(props.folderKey)
+  }
+  return preferences.expandedFolderKeys.has(props.folderKey) ||
+    gallery.ancestorKeys.includes(props.folderKey)
+})
 const hasChildren = computed(() => (folder.value?.children?.length ?? 0) > 0)
 
 const sortedChildren = computed(() => {
@@ -89,6 +94,15 @@ function matchesSearch(key: string, search: string): boolean {
 }
 
 function toggleExpand() {
+  if (props.expandedOverride) {
+    // Isolated expand state for picker mode
+    if (props.expandedOverride.has(props.folderKey)) {
+      props.expandedOverride.delete(props.folderKey)
+    } else {
+      props.expandedOverride.add(props.folderKey)
+    }
+    return
+  }
   // If collapsing and the active folder is a descendant, navigate to this folder
   if (isExpanded.value && props.mode === 'nav') {
     const activeKey = gallery.currentFolderKey
@@ -172,6 +186,7 @@ function handleContextMenu(e: MouseEvent) {
         :search-filter="searchFilter"
         :sort-key="sortKey"
         :sort-dir="sortDir"
+        :expanded-override="expandedOverride"
         @navigate="emit('navigate', $event)"
         @pick="emit('pick', $event)"
         @context-menu="(key: string, x: number, y: number) => emit('contextMenu', key, x, y)"
