@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+/* SmartGallery theme — maps existing CSS variables to Tailwind utility classes.
+   Use as: bg-surface, text-primary, border-border, etc. */
+@theme {
+  --color-bg: #0a0a0a;
+  --color-surface: #1a1a1a;
+  --color-surface-hover: #252525;
+  --color-primary: #007bff;
+  --color-primary-hover: #0056b3;
+  --color-text: #f8f9fa;
+  --color-text-muted: #adb5bd;
+  --color-border: #343a40;
+  --color-danger: #dc3545;
+  --color-danger-hover: #c82333;
+  --color-favorite: #ffc107;
+  --color-workflow: #28a745;
+  --color-success: #20c997;
+  --color-ai: #ff00ff;
+  --color-glass-bg: rgba(255, 255, 255, 0.05);
+  --color-glass-border: rgba(255, 255, 255, 0.1);
+}
+
+/* Base styles matching the existing app */
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}

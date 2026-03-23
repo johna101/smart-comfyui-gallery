@@ -7373,31 +7373,72 @@
         <!-- Close Button -->
         <button class="close-btn" onclick="closeSbZoom()" style="position:absolute; top:20px; right:20px; font-size:2rem; z-index:4005;">×</button>
     </div>
-    
+
+    <!-- Vue 3 mount point — components render here during incremental migration -->
+    <div id="vue-app"></div>
+
+    <!-- Consolidated data bridge: Flask → Vue (and legacy JS) -->
+    <script>
+        window.__GALLERY_DATA__ = {
+            folders: {{ folders | tojson }},
+            files: {{ files | tojson }},
+            currentFolderKey: '{{ current_folder_key }}',
+            currentFolderInfo: {{ current_folder_info | tojson }},
+            totalFiles: {{ total_files }},
+            totalFolderFiles: {{ total_folder_files }},
+            totalDbFiles: {{ total_db_files }},
+            breadcrumbs: {{ breadcrumbs | tojson }},
+            ancestorKeys: {{ ancestor_keys | tojson }},
+            availableExtensions: {{ available_extensions | tojson }},
+            availablePrefixes: {{ available_prefixes | tojson }},
+            prefixLimitReached: {{ prefix_limit_reached | tojson }},
+            selectedExtensions: {{ selected_extensions | tojson }},
+            selectedPrefixes: {{ selected_prefixes | tojson }},
+            protectedFolderKeys: {{ protected_folder_keys | tojson }},
+            showFavorites: {{ show_favorites | tojson }},
+            enableAiSearch: {{ enable_ai_search | tojson }},
+            isAiSearch: {{ is_ai_search | tojson }},
+            aiQuery: {{ ai_query | tojson }},
+            isGlobalSearch: {{ is_global_search | tojson }},
+            activeFiltersCount: {{ active_filters_count }},
+            currentScope: '{{ current_scope }}',
+            isRecursive: {{ is_recursive | tojson }},
+            appVersion: '{{ app_version }}',
+            githubUrl: '{{ github_url }}',
+            updateAvailable: {{ update_available | tojson }},
+            remoteVersion: {{ remote_version | tojson }},
+            ffmpegAvailable: {{ ffmpeg_available | tojson }},
+            streamThreshold: {{ stream_threshold }},
+        };
+    </script>
+
+    {% if config.DEBUG %}
+    <!-- Vite dev server — only loaded in debug mode -->
+    <script type="module" src="http://localhost:5173/src/main.ts"></script>
+    {% endif %}
+
     <script>
         // --- DATA INITIALIZATION AND GLOBAL STATE ---
-        const foldersData = {{ folders | tojson }};
-        const ffmpegAvailable = {{ ffmpeg_available | tojson }};
-        const streamThresholdBytes = {{ stream_threshold }}; 
-        const currentFolderInfo = {{ current_folder_info | tojson }};
-        const protectedFolderKeys = {{ protected_folder_keys | tojson }};
-        const initialFiles = {{ files | tojson }};
-        let totalFiles = {{ total_files }};
-        let totalFolderFiles = {{ total_folder_files }};
-        const currentFolderKey = '{{ current_folder_key }}';
-        const ancestorKeys = {{ ancestor_keys | tojson }};
+        // Legacy JS reads from the consolidated __GALLERY_DATA__ object
+        const foldersData = window.__GALLERY_DATA__.folders;
+        const ffmpegAvailable = window.__GALLERY_DATA__.ffmpegAvailable;
+        const streamThresholdBytes = window.__GALLERY_DATA__.streamThreshold;
+        const currentFolderInfo = window.__GALLERY_DATA__.currentFolderInfo;
+        const protectedFolderKeys = window.__GALLERY_DATA__.protectedFolderKeys;
+        const initialFiles = window.__GALLERY_DATA__.files;
+        let totalFiles = window.__GALLERY_DATA__.totalFiles;
+        let totalFolderFiles = window.__GALLERY_DATA__.totalFolderFiles;
+        const currentFolderKey = window.__GALLERY_DATA__.currentFolderKey;
+        const ancestorKeys = window.__GALLERY_DATA__.ancestorKeys;
         // --- USER PREFERENCES (LocalStorage) ---
-        // Default to FALSE (OFF) if not set. User must explicitly enable it.
-        // We check if it equals 'true' string.
         let videoAutoplay = localStorage.getItem('sg_videoAutoplay') === 'true';
-        // Grid Size Preference (Default: 'normal')
         let gridSizePref = localStorage.getItem('sg_gridSize') || 'normal';
          // --- AI SEARCH VARIABLES ---
-        const enableAiSearch = {{ enable_ai_search | tojson }};
-        const isAiSearch = {{ is_ai_search | tojson }};
-        const isGlobalSearch = {{ is_global_search | tojson }};
-        const activeFiltersCount = {{ active_filters_count }};
-        const rawAiQuery = {{ ai_query | tojson }};
+        const enableAiSearch = window.__GALLERY_DATA__.enableAiSearch;
+        const isAiSearch = window.__GALLERY_DATA__.isAiSearch;
+        const isGlobalSearch = window.__GALLERY_DATA__.isGlobalSearch;
+        const activeFiltersCount = window.__GALLERY_DATA__.activeFiltersCount;
+        const rawAiQuery = window.__GALLERY_DATA__.aiQuery;
         const isAiGlobal = isAiSearch && (rawAiQuery && rawAiQuery.indexOf(" ||| ") === -1);
         let currentAiScope = 'global'; 
 
@@ -10252,8 +10293,8 @@
         const recursiveCheckbox = document.querySelector('input[name="recursive"]');
         const recursiveWrapper = document.getElementById('recursive-standard-ui');
 
-        let selectedExts = new Set({{ selected_extensions | tojson }});
-        let selectedPfxs = new Set({{ selected_prefixes | tojson }});
+        let selectedExts = new Set(window.__GALLERY_DATA__.selectedExtensions);
+        let selectedPfxs = new Set(window.__GALLERY_DATA__.selectedPrefixes);
 
         // 1. Core Dropdown Logic
         function toggleCustomDropdown(event, menuId) {
@@ -10432,12 +10473,12 @@
         }
 
         // 6. Initial Population
-        const initialExts = {{ available_extensions | tojson }};
+        const initialExts = window.__GALLERY_DATA__.availableExtensions;
         renderCustomOptions('dropdown-extensions', 'count-extensions', initialExts, 'extension', selectedExts);
-        
-        const pfxLimit = {{ prefix_limit_reached | tojson }};
+
+        const pfxLimit = window.__GALLERY_DATA__.prefixLimitReached;
         if (!pfxLimit) {
-            const initialPfxs = {{ available_prefixes | tojson }};
+            const initialPfxs = window.__GALLERY_DATA__.availablePrefixes;
             renderCustomOptions('dropdown-prefixes', 'count-prefixes', initialPfxs, 'prefix', selectedPfxs);
         }
 
