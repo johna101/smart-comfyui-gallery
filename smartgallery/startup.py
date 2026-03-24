@@ -188,8 +188,28 @@ def run_app():
     app = create_app()
 
     print(f"{Colors.GREEN}{Colors.BOLD}🚀 Gallery started successfully!{Colors.RESET}")
-    print(f"👉 Access URL: {Colors.CYAN}{Colors.BOLD}http://127.0.0.1:{SERVER_PORT}/galleryout/{Colors.RESET}")
-    print(f"   (Press CTRL+C to stop)")
 
+    # Discover all network interfaces for a useful access URL
+    server_host = os.environ.get('SERVER_HOST', '0.0.0.0')
     debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
-    app.run(host='0.0.0.0', port=SERVER_PORT, debug=debug_mode)
+
+    if server_host == '0.0.0.0':
+        import socket
+        print(f"👉 Access URLs:")
+        print(f"   {Colors.CYAN}http://localhost:{SERVER_PORT}/galleryout/{Colors.RESET}  (local)")
+        try:
+            # Get all non-loopback IPv4 addresses
+            for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+                ip = info[4][0]
+                if not ip.startswith('127.'):
+                    print(f"   {Colors.CYAN}{Colors.BOLD}http://{ip}:{SERVER_PORT}/galleryout/{Colors.RESET}")
+        except Exception:
+            pass
+    else:
+        print(f"👉 Access URL: {Colors.CYAN}{Colors.BOLD}http://{server_host}:{SERVER_PORT}/galleryout/{Colors.RESET}")
+
+    if debug_mode:
+        print(f"   {Colors.YELLOW}Debug mode: ON (Vite dev server expected on :5173){Colors.RESET}")
+    print(f"   (Press CTRL+C to stop)\n")
+
+    app.run(host=server_host, port=SERVER_PORT, debug=debug_mode)
