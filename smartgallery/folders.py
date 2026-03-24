@@ -272,6 +272,9 @@ def full_sync_database(conn):
             for name in os.listdir(folder_path):
                 filepath = os.path.join(folder_path, name)
 
+                # Skip macOS resource fork files (._filename)
+                if name.startswith('._'):
+                    continue
                 # Check extension against whitelist
                 _, ext = os.path.splitext(name)
                 if os.path.isfile(filepath) and ext.lower() in valid_extensions:
@@ -415,6 +418,8 @@ def sync_folder_on_demand(folder_path):
             disk_files, valid_extensions = {}, {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.mp4', '.mkv', '.webm', '.mov', '.avi', '.mp3', '.wav', '.ogg', '.flac'}
             if os.path.isdir(folder_path):
                 for name in os.listdir(folder_path):
+                    if name.startswith('._'):
+                        continue  # Skip macOS resource fork files
                     filepath = os.path.join(folder_path, name)
                     if os.path.isfile(filepath) and os.path.splitext(name)[1].lower() in valid_extensions:
                         disk_files[filepath] = os.path.getmtime(filepath)
@@ -526,6 +531,8 @@ def scan_folder_and_extract_options(folder_path, recursive=False):
                 # Filter out hidden/protected folders in-place
                 dirs[:] = [d for d in dirs if not d.startswith('.') and d not in [THUMBNAIL_CACHE_FOLDER_NAME, SQLITE_CACHE_FOLDER_NAME, ZIP_CACHE_FOLDER_NAME, AI_MODELS_FOLDER_NAME]]
                 for filename in files:
+                    if filename.startswith('._'):
+                        continue  # Skip macOS resource fork files
                     ext = os.path.splitext(filename)[1].lower()
                     if ext and ext not in ['.json', '.sqlite']:
                         file_count += 1
@@ -536,6 +543,8 @@ def scan_folder_and_extract_options(folder_path, recursive=False):
             for entry in os.scandir(folder_path):
                 if entry.is_file():
                     filename = entry.name
+                    if filename.startswith('._'):
+                        continue  # Skip macOS resource fork files
                     ext = os.path.splitext(filename)[1].lower()
                     if ext and ext not in ['.json', '.sqlite']:
                         file_count += 1

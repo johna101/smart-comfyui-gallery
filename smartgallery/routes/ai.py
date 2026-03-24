@@ -266,10 +266,10 @@ def ai_indexing_add_folder():
                 for r, d, f in os.walk(raw_path, topdown=True, followlinks=False):
                     d[:] = [x for x in d if not x.startswith('.') and x not in exc]
                     for x in f:
-                        if os.path.splitext(x)[1].lower() in valid: files_found.append(os.path.join(r, x))
+                        if not x.startswith('._') and os.path.splitext(x)[1].lower() in valid: files_found.append(os.path.join(r, x))
             else:
                 for entry in os.scandir(raw_path):
-                    if entry.is_file() and os.path.splitext(entry.name)[1].lower() in valid: files_found.append(entry.path)
+                    if entry.is_file() and not entry.name.startswith('._') and os.path.splitext(entry.name)[1].lower() in valid: files_found.append(entry.path)
         except: return
 
         # Optimize: Batch Operations
