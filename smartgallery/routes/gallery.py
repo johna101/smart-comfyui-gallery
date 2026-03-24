@@ -110,10 +110,10 @@ def _build_folder_view(folder_key, args):
 
             if start_date:
                 try: conditions.append("mtime >= ?"); params.append(datetime.strptime(start_date, '%Y-%m-%d').timestamp())
-                except: pass
+                except ValueError: pass
             if end_date:
                 try: conditions.append("mtime <= ?"); params.append(datetime.strptime(end_date, '%Y-%m-%d').timestamp() + 86399)
-                except: pass
+                except ValueError: pass
 
             if selected_exts:
                 e_cond = [f"name LIKE ?" for e in selected_exts if e.strip()]
@@ -178,7 +178,7 @@ def _build_folder_view(folder_key, args):
     with get_db_connection() as conn_opts:
         try:
             total_db_files = conn_opts.execute("SELECT COUNT(*) FROM files").fetchone()[0]
-        except:
+        except Exception:
             total_db_files = 0
 
         scope_for_opts = 'global' if is_global_search else 'local'

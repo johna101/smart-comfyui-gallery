@@ -15,6 +15,10 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Allow access from any origin (needed when Flask serves the page on a different host/port)
+    cors: true,
+    // Listen on all interfaces so the dev server is reachable via LAN IP
+    host: true,
     // Proxy all /galleryout/* requests to the Flask backend
     proxy: {
       '/galleryout': {

@@ -27,7 +27,7 @@ def get_standardized_path(filepath):
         if os.name == 'nt':
             return std_path.lower()
         return std_path
-    except:
+    except (OSError, ValueError, TypeError):
         return str(filepath)
 
 
@@ -95,7 +95,7 @@ def generate_node_summary(workflow_json_string):
 
     def get_id_safe(n):
         try: return int(n.get('id', 0))
-        except: return str(n.get('id', 0))
+        except (ValueError, TypeError): return str(n.get('id', 0))
 
     sorted_nodes = sorted(nodes, key=lambda n: (
         NODE_CATEGORIES_ORDER.index(NODE_CATEGORIES.get(n.get('type'), 'others')),

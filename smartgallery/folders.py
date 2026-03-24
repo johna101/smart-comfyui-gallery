@@ -61,7 +61,7 @@ def get_dynamic_folder_config(force_refresh=False):
                     for r in rows:
                         w_path = os.path.normpath(r['path']).replace('\\', '/')
                         watched_rules.append((w_path, bool(r['recursive'])))
-            except: pass
+            except Exception: pass
 
         # 2. Fetch Mounted Folders (New)
         mounted_paths = set()
@@ -71,7 +71,7 @@ def get_dynamic_folder_config(force_refresh=False):
                 for r in rows:
                     # Normalize for comparison
                     mounted_paths.add(os.path.normpath(r['path']).replace('\\', '/'))
-        except: pass
+        except Exception: pass
 
         all_folders = {}
         for dirpath, dirnames, _ in os.walk(BASE_OUTPUT_PATH):
@@ -180,7 +180,7 @@ def background_watcher_task():
                                         full = os.path.join(folder_path, f)
                                         if os.path.isfile(full) and os.path.splitext(f)[1].lower() in valid_exts:
                                             files_to_check.append(full)
-                                except: pass
+                                except OSError: pass
 
                         # Process Candidates
                         for raw_path in files_to_check:

@@ -18,7 +18,12 @@ files_bp = Blueprint('files', __name__, url_prefix='/galleryout')
 
 # --- Helper Functions (shared with media routes) ---
 
+# Whitelist of columns allowed in dynamic SELECT to prevent SQL injection
+_ALLOWED_COLUMNS = frozenset({'*', 'path', 'name', 'type', 'mtime', 'is_favorite', 'has_workflow'})
+
 def get_file_info_from_db(file_id, column='*'):
+    if column not in _ALLOWED_COLUMNS:
+        raise ValueError(f"Invalid column: {column}")
     with get_db_connection() as conn:
         row = conn.execute(f"SELECT {column} FROM files WHERE id = ?", (file_id,)).fetchone()
     if not row: abort(404)
@@ -65,17 +70,21 @@ def move_batch():
     dest_path_raw = folders[dest_key]['path']
 
     with get_db_connection() as conn:
+        # Pre-fetch all file metadata in one query to avoid N+1
+        placeholders = ','.join(['?'] * len(file_ids))
+        query_fetch = f"""
+            SELECT id, path, name, size, has_workflow, is_favorite, type, duration, dimensions,
+                   ai_last_scanned, ai_caption, ai_embedding, ai_error, workflow_files, workflow_prompt
+            FROM files WHERE id IN ({placeholders})
+        """
+        all_rows = conn.execute(query_fetch, file_ids).fetchall()
+        file_map = {row['id']: dict(row) for row in all_rows}
+
         for file_id in file_ids:
             source_path = None
             try:
-                # 1. Fetch Source Data + AI Metadata
-                query_fetch = """
-                    SELECT
-                        path, name, size, has_workflow, is_favorite, type, duration, dimensions,
-                        ai_last_scanned, ai_caption, ai_embedding, ai_error, workflow_files, workflow_prompt
-                    FROM files WHERE id = ?
-                """
-                file_info = conn.execute(query_fetch, (file_id,)).fetchone()
+                # 1. Fetch Source Data + AI Metadata (from pre-fetched map)
+                file_info = file_map.get(file_id)
 
                 if not file_info:
                     failed_files.append(f"ID {file_id} not found in DB")
@@ -194,10 +203,15 @@ def copy_batch():
     failed_files = []
 
     with get_db_connection() as conn:
+        # Pre-fetch all file metadata in one query to avoid N+1
+        placeholders = ','.join(['?'] * len(file_ids))
+        all_rows = conn.execute(f"SELECT * FROM files WHERE id IN ({placeholders})", file_ids).fetchall()
+        file_map = {row['id']: dict(row) for row in all_rows}
+
         for file_id in file_ids:
             try:
-                # 1. Fetch Source info
-                file_info = conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
+                # 1. Fetch Source info (from pre-fetched map)
+                file_info = file_map.get(file_id)
                 if not file_info: continue
 
                 source_path = file_info['path']

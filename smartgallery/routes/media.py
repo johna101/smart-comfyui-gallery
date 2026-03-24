@@ -5,13 +5,17 @@ import os
 import sys
 import hashlib
 import json
+import logging
 import subprocess
 import uuid
 import glob
 import concurrent.futures
+from collections import OrderedDict
 from flask import Blueprint, request, jsonify, abort, send_file, send_from_directory, Response
 from PIL import Image, ImageSequence
 from werkzeug.utils import secure_filename
+
+logger = logging.getLogger(__name__)
 
 from smartgallery.config import (
     BASE_INPUT_PATH, BASE_OUTPUT_PATH, THUMBNAIL_CACHE_DIR
@@ -125,7 +129,26 @@ def get_node_summary(file_id):
 
 
 # In-memory cache: file_id → thumbnail path (avoids DB + glob on every request)
-_thumb_path_cache: dict[str, str] = {}
+# Bounded LRU to prevent unbounded growth on large galleries (49K+ files)
+class _LRUCache:
+    def __init__(self, maxsize=5000):
+        self._cache: OrderedDict[str, str] = OrderedDict()
+        self._maxsize = maxsize
+
+    def get(self, key):
+        if key in self._cache:
+            self._cache.move_to_end(key)
+            return self._cache[key]
+        return None
+
+    def set(self, key, value):
+        if key in self._cache:
+            self._cache.move_to_end(key)
+        self._cache[key] = value
+        if len(self._cache) > self._maxsize:
+            self._cache.popitem(last=False)
+
+_thumb_path_cache = _LRUCache(maxsize=5000)
 
 @media_bp.route('/thumbnail/<string:file_id>')
 def serve_thumbnail(file_id):
@@ -149,7 +172,7 @@ def serve_thumbnail(file_id):
     for ext in ('.jpg', '.png', '.webp', '.gif'):
         candidate = os.path.join(THUMBNAIL_CACHE_DIR, file_hash + ext)
         if os.path.exists(candidate):
-            _thumb_path_cache[file_id] = candidate
+            _thumb_path_cache.set(file_id, candidate)
             response = send_file(candidate)
             response.headers['Cache-Control'] = 'public, max-age=86400, immutable'
             return response
@@ -157,7 +180,7 @@ def serve_thumbnail(file_id):
     print(f"WARN: Thumbnail not found for {os.path.basename(filepath)}, generating...")
     cache_path = create_thumbnail(filepath, file_hash, info['type'])
     if cache_path and os.path.exists(cache_path):
-        _thumb_path_cache[file_id] = cache_path
+        _thumb_path_cache.set(file_id, cache_path)
         response = send_file(cache_path)
         response.headers['Cache-Control'] = 'public, max-age=86400, immutable'
         return response
@@ -210,7 +233,7 @@ def get_storyboard(file_id):
                             if len(_parts) > 2 and _parts[2]: _total_frames = int(_parts[2])
                         if _total_frames == 0 and _duration > 0 and _fps > 0:
                             _total_frames = int(_duration * _fps)
-                    except:
+                    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, ValueError):
                         pass
                 return jsonify({'status': 'success', 'cached': True, 'frames': urls,
                                 'totalVideoFrames': _total_frames, 'fps': round(_fps, 2), 'duration': round(_duration, 2)})
@@ -268,7 +291,7 @@ def get_storyboard(file_id):
                     duration += float(parts[0])
                     if len(parts) > 1: duration += int(parts[1]) * 60
                     if len(parts) > 2: duration += int(parts[2]) * 3600
-                except:
+                except (ValueError, IndexError):
                     pass
 
             # Fallback: Try format duration
@@ -290,7 +313,7 @@ def get_storyboard(file_id):
                     )
                     if res2.stdout.strip():
                         duration = float(res2.stdout.strip())
-                except:
+                except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, ValueError):
                     pass
 
             # Calculate missing values
@@ -361,7 +384,7 @@ def get_storyboard(file_id):
 
             if os.path.exists(test_path):
                 try: os.remove(test_path)
-                except: pass
+                except OSError: pass
 
         # 5. TRANSCODING if needed
         source_for_extraction = filepath
@@ -437,14 +460,14 @@ def get_storyboard(file_id):
 
                             if len(parts) > 2 and parts[2]:
                                 total_video_frames = int(parts[2])
-                    except:
+                    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, ValueError):
                         pass
 
             except Exception as e:
                 print(f"Transcode failed: {e}")
                 if temp_transcoded and os.path.exists(temp_transcoded):
                     try: os.remove(temp_transcoded)
-                    except: pass
+                    except OSError: pass
                 temp_transcoded = None
 
         # 6. Worker Function (OPTIMIZED)
@@ -496,10 +519,10 @@ def get_storyboard(file_id):
                         if os.path.exists(out_path) and os.path.getsize(out_path) > 100:
                             img = Image.open(out_path)
 
-                    except Exception:
+                    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError):
                         if os.path.exists(out_path):
                             try: os.remove(out_path)
-                            except: pass
+                            except OSError: pass
 
                         # Slow seek fallback
                         cmd_slow = [
@@ -523,7 +546,7 @@ def get_storyboard(file_id):
 
                             if os.path.exists(out_path) and os.path.getsize(out_path) > 100:
                                 img = Image.open(out_path)
-                        except:
+                        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError):
                             pass
 
                 # B. Animation Extraction
@@ -567,7 +590,7 @@ def get_storyboard(file_id):
                     font = None
                     try:
                         font = ImageFont.load_default(size=font_size)
-                    except:
+                    except (OSError, TypeError):
                         font = ImageFont.load_default()
 
                     # Measure
@@ -630,7 +653,7 @@ def get_storyboard(file_id):
         if temp_transcoded and os.path.exists(temp_transcoded):
             try:
                 os.remove(temp_transcoded)
-            except:
+            except OSError:
                 pass
 
         final_urls = [url for url in frame_urls if url is not None]
@@ -687,7 +710,7 @@ def storyboard_hires(file_id, frame_index):
                 parts = res.stdout.strip().split(',')
                 if len(parts) > 1 and parts[1]:
                     duration = float(parts[1])
-        except:
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, ValueError):
             pass
 
         if duration <= 0 and info.get('duration'):
@@ -697,7 +720,7 @@ def storyboard_hires(file_id, frame_index):
                 duration += float(parts[0])
                 if len(parts) > 1: duration += int(parts[1]) * 60
                 if len(parts) > 2: duration += int(parts[2]) * 3600
-            except:
+            except (ValueError, IndexError):
                 pass
 
         if duration <= 0:

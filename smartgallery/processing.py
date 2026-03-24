@@ -5,6 +5,7 @@ import os
 import sys
 import hashlib
 import json
+import logging
 import re
 import shutil
 import time
@@ -12,6 +13,8 @@ import glob as glob_module
 import subprocess
 import cv2
 from PIL import Image, ImageSequence
+
+logger = logging.getLogger(__name__)
 
 from smartgallery.config import (
     BASE_OUTPUT_PATH, FFPROBE_MANUAL_PATH, THUMBNAIL_WIDTH, THUMBNAIL_CACHE_DIR,
@@ -50,15 +53,17 @@ def find_ffprobe_path():
     if FFPROBE_MANUAL_PATH and os.path.isfile(FFPROBE_MANUAL_PATH):
         try:
             subprocess.run([FFPROBE_MANUAL_PATH, "-version"], capture_output=True, check=True,
+                           timeout=10,
                            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
             return FFPROBE_MANUAL_PATH
-        except Exception: pass
+        except (subprocess.SubprocessError, OSError, subprocess.TimeoutExpired): pass
     base_name = "ffprobe.exe" if sys.platform == "win32" else "ffprobe"
     try:
         subprocess.run([base_name, "-version"], capture_output=True, check=True,
+                       timeout=10,
                        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
         return base_name
-    except Exception: pass
+    except (subprocess.SubprocessError, OSError, subprocess.TimeoutExpired): pass
     print("WARNING: ffprobe not found. Video metadata analysis will be disabled.")
     return None
 
@@ -80,7 +85,7 @@ def _validate_and_get_workflow(json_string):
             if is_api:
                 return json.dumps(workflow_data), 'api'
 
-    except Exception:
+    except (json.JSONDecodeError, ValueError, TypeError):
         pass
 
     return None, None
@@ -90,7 +95,7 @@ def _scan_bytes_for_workflow(content_bytes):
     """Generator that yields all valid JSON objects found in the byte stream."""
     try:
         stream_str = content_bytes.decode('utf-8', errors='ignore')
-    except Exception:
+    except (UnicodeDecodeError, AttributeError):
         return
 
     start_pos = 0
@@ -114,7 +119,7 @@ def _scan_bytes_for_workflow(content_bytes):
                 try:
                     json.loads(candidate)
                     yield candidate
-                except Exception:
+                except (json.JSONDecodeError, ValueError):
                     pass
 
                 start_pos = i + 1
@@ -151,14 +156,16 @@ def extract_workflow(filepath, target_type='ui'):
             try:
                 cmd = [current_ffprobe_path, '-v', 'quiet', '-print_format', 'json', '-show_format', filepath]
                 result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='ignore',
-                                        check=True,
+                                        check=True, timeout=30,
                                         creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
                 data = json.loads(result.stdout)
                 if 'format' in data and 'tags' in data['format']:
                     for value in data['format']['tags'].values():
                         if isinstance(value, str) and value.strip().startswith('{'):
                             analyze_json(value)
-            except Exception: pass
+            except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError,
+                    json.JSONDecodeError, ValueError) as e:
+                logger.debug("Workflow extraction via ffprobe failed for %s: %s", os.path.basename(filepath), e)
     else:
         try:
             with Image.open(filepath) as img:
@@ -174,11 +181,12 @@ def extract_workflow(filepath, target_type='ui'):
                             start = exif_str.find('workflow:{') + len('workflow:')
                             for json_candidate in _scan_bytes_for_workflow(exif_str[start:].encode('utf-8')):
                                 analyze_json(json_candidate)
-                    except Exception: pass
+                    except (UnicodeDecodeError, ValueError): pass
 
                     for json_str in _scan_bytes_for_workflow(exif_data):
                         analyze_json(json_str)
-        except Exception: pass
+        except (OSError, Image.DecompressionBombError) as e:
+            logger.warning("Image workflow extraction failed for %s: %s", os.path.basename(filepath), e)
 
     # Raw byte scan (ultimate fallback)
     if not found_workflows:
@@ -188,7 +196,8 @@ def extract_workflow(filepath, target_type='ui'):
             for json_str in _scan_bytes_for_workflow(content):
                 analyze_json(json_str)
                 if target_type in found_workflows: break
-        except Exception: pass
+        except OSError as e:
+            logger.warning("Raw byte scan failed for %s: %s", os.path.basename(filepath), e)
 
     if target_type in found_workflows:
         return found_workflows[target_type]
@@ -202,7 +211,7 @@ def extract_workflow(filepath, target_type='ui'):
 def is_webp_animated(filepath):
     try:
         with Image.open(filepath) as img: return getattr(img, 'is_animated', False)
-    except: return False
+    except (OSError, Image.DecompressionBombError): return False
 
 
 def analyze_file_metadata(filepath):
@@ -224,7 +233,8 @@ def analyze_file_metadata(filepath):
     if 'image' in details['type']:
         try:
             with Image.open(filepath) as img: details['dimensions'] = f"{img.width}x{img.height}"
-        except Exception: pass
+        except (OSError, Image.DecompressionBombError) as e:
+            logger.warning("Could not read image dimensions for %s: %s", os.path.basename(filepath), e)
     if extract_workflow(filepath): details['has_workflow'] = 1
     total_duration_sec = 0
     if details['type'] == 'video':
@@ -235,7 +245,8 @@ def analyze_file_metadata(filepath):
                 if fps > 0 and count > 0: total_duration_sec = count / fps
                 details['dimensions'] = f"{int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}"
                 cap.release()
-        except Exception: pass
+        except (OSError, cv2.error) as e:
+            logger.warning("Video metadata extraction failed for %s: %s", os.path.basename(filepath), e)
     elif details['type'] == 'animated_image':
         try:
             with Image.open(filepath) as img:
@@ -244,7 +255,8 @@ def analyze_file_metadata(filepath):
                         total_duration_sec = sum(frame.info.get('duration', 100) for frame in ImageSequence.Iterator(img)) / 1000
                     elif ext_lower == '.webp':
                         total_duration_sec = getattr(img, 'n_frames', 1) / WEBP_ANIMATED_FPS
-        except Exception: pass
+        except (OSError, Image.DecompressionBombError) as e:
+            logger.warning("Animated image metadata failed for %s: %s", os.path.basename(filepath), e)
     if total_duration_sec > 0: details['duration'] = format_duration(total_duration_sec)
     return details
 
@@ -299,8 +311,8 @@ def create_thumbnail(filepath, file_hash, file_type):
                     img.thumbnail((THUMBNAIL_WIDTH, THUMBNAIL_WIDTH * 2), Image.Resampling.LANCZOS)
                     img.save(cache_path, 'JPEG', quality=80)
                     return cache_path
-        except Exception:
-            pass
+        except (OSError, cv2.error) as e:
+            logger.debug("cv2 thumbnail failed for %s, trying ffmpeg: %s", os.path.basename(filepath), e)
 
         if state.FFPROBE_EXECUTABLE_PATH:
             try:
@@ -320,7 +332,7 @@ def create_thumbnail(filepath, file_hash, file_type):
 
                 creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
                 subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True,
-                               creationflags=creation_flags)
+                               timeout=30, creationflags=creation_flags)
 
                 if os.path.exists(cache_path):
                     return cache_path
@@ -339,7 +351,7 @@ def extract_workflow_files_string(workflow_json_string):
 
     try:
         data = json.loads(workflow_json_string)
-    except:
+    except (json.JSONDecodeError, ValueError):
         return ""
 
     nodes = []
@@ -407,7 +419,7 @@ def extract_workflow_prompt_string(workflow_json_string):
 
     try:
         data = json.loads(workflow_json_string)
-    except:
+    except (json.JSONDecodeError, ValueError):
         return ""
 
     nodes = []

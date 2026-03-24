@@ -68,7 +68,7 @@ def compare_files_api():
                     key = f"{node_type} > {p['name']}"
                     flat_params[key] = str(p['value'])
             return flat_params
-        except:
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             return {}
 
     try:

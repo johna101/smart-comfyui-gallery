@@ -118,9 +118,9 @@ def mount_folder():
         # Clean up if partially created
         if os.path.exists(link_full_path):
             try: os.rmdir(link_full_path)
-            except: pass
+            except OSError: pass
             try: os.unlink(link_full_path)
-            except: pass
+            except OSError: pass
 
         return jsonify({'status': 'error', 'message': str(e)}), 500
 

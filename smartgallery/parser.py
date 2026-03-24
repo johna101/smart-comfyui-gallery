@@ -76,7 +76,7 @@ class ComfyMetadataParser:
 
                 if widgets and isinstance(widgets[0], list):
                     return self._get_real_value(widgets[0])
-        except:
+        except (KeyError, IndexError, TypeError, ValueError):
             pass
         return None
 

@@ -9,7 +9,8 @@ import threading
 
 from smartgallery.config import (
     Colors, APP_VERSION, APP_VERSION_DATE, GITHUB_REPO_URL, GITHUB_RAW_URL,
-    BASE_OUTPUT_PATH, BASE_INPUT_PATH, SERVER_PORT, ENABLE_AI_SEARCH
+    BASE_OUTPUT_PATH, BASE_INPUT_PATH, SERVER_HOST, SERVER_PORT, ENABLE_AI_SEARCH,
+    _settings_path
 )
 from smartgallery import state
 
@@ -98,8 +99,9 @@ def show_config_error_and_exit(path):
         f"❌ CRITICAL ERROR: The specified path does not exist or is not accessible:\n\n"
         f"👉 {path}\n\n"
         f"INSTRUCTIONS:\n"
-        f"1. If you are launching via a script (e.g., .bat file), please edit it and set the correct 'BASE_OUTPUT_PATH' variable.\n"
-        f"2. Or edit 'smartgallery.py' (USER CONFIGURATION section) and ensure the path points to an existing folder.\n\n"
+        f"1. Set 'comfyui_output_path' in your settings.json: {_settings_path}\n"
+        f"2. Or set the BASE_OUTPUT_PATH environment variable.\n"
+        f"3. Or use run_smartgallery.sh with the correct paths.\n\n"
         f"The program cannot continue and will now exit."
     )
 
@@ -151,14 +153,47 @@ def run_app():
     check_for_updates()
     print_configuration()
 
+    # --- CHECK: FIRST-RUN / NO CONFIG ---
+    if not BASE_OUTPUT_PATH:
+        import json as _json
+        if not os.path.exists(_settings_path):
+            template = {
+                "comfyui_output_path": "/path/to/comfyui/output",
+                "comfyui_input_path": "/path/to/comfyui/input",
+                "ffprobe_path": "auto",
+                "server_host": "0.0.0.0",
+                "server_port": 8189,
+                "delete_mode": "permanent",
+                "thumbnail_width": 300,
+                "enable_ai_search": False
+            }
+            try:
+                with open(_settings_path, 'w') as f:
+                    _json.dump(template, f, indent=2)
+                    f.write('\n')
+                print(f"\n{Colors.YELLOW}{Colors.BOLD}First run — created settings.json with placeholders:{Colors.RESET}")
+                print(f"  {Colors.CYAN}{_settings_path}{Colors.RESET}\n")
+                print(f"Edit it with your ComfyUI paths, then run again.\n")
+            except OSError as e:
+                print(f"\n{Colors.RED}{Colors.BOLD}SmartGallery is not configured.{Colors.RESET}\n")
+                print(f"Could not create settings.json ({e}). Create it manually at:")
+                print(f"  {Colors.CYAN}{_settings_path}{Colors.RESET}\n")
+        else:
+            print(f"\n{Colors.RED}{Colors.BOLD}SmartGallery is not configured.{Colors.RESET}\n")
+            print(f"Edit your settings.json with a valid ComfyUI output path:")
+            print(f"  {Colors.CYAN}{_settings_path}{Colors.RESET}\n")
+
+        print(f"Or set the {Colors.BOLD}BASE_OUTPUT_PATH{Colors.RESET} environment variable.\n")
+        sys.exit(1)
+
     # --- CHECK: CRITICAL OUTPUT PATH CHECK ---
     if not os.path.exists(BASE_OUTPUT_PATH):
         show_config_error_and_exit(BASE_OUTPUT_PATH)
 
     # --- CHECK: INPUT PATH CHECK (Non-Blocking) ---
-    if not os.path.exists(BASE_INPUT_PATH):
+    if not BASE_INPUT_PATH or not os.path.exists(BASE_INPUT_PATH):
         print(f"{Colors.YELLOW}{Colors.BOLD}WARNING: Input Path not found!{Colors.RESET}")
-        print(f"{Colors.YELLOW}   The path '{BASE_INPUT_PATH}' does not exist.{Colors.RESET}")
+        print(f"{Colors.YELLOW}   The path '{BASE_INPUT_PATH or '(not configured)'}' does not exist.{Colors.RESET}")
         print(f"{Colors.YELLOW}   > Source media visualization in Node Summary will be DISABLED.{Colors.RESET}")
         print(f"{Colors.YELLOW}   > The gallery will still function normally for output files.{Colors.RESET}\n")
 
@@ -170,7 +205,7 @@ def run_app():
         if os.environ.get('DISPLAY') or os.name == 'nt':
             try:
                 show_ffmpeg_warning()
-            except:
+            except Exception:
                 print(f"{Colors.RED}WARNING: FFmpeg not found. Video workflows extraction disabled.{Colors.RESET}")
         else:
             print(f"{Colors.RED}WARNING: FFmpeg not found. Video workflows extraction disabled.{Colors.RESET}")
@@ -190,10 +225,9 @@ def run_app():
     print(f"{Colors.GREEN}{Colors.BOLD}🚀 Gallery started successfully!{Colors.RESET}")
 
     # Discover all network interfaces for a useful access URL
-    server_host = os.environ.get('SERVER_HOST', '0.0.0.0')
     debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
 
-    if server_host == '0.0.0.0':
+    if SERVER_HOST == '0.0.0.0':
         import socket
         print(f"👉 Access URLs:")
         print(f"   {Colors.CYAN}http://localhost:{SERVER_PORT}/galleryout/{Colors.RESET}  (local)")
@@ -206,10 +240,10 @@ def run_app():
         except Exception:
             pass
     else:
-        print(f"👉 Access URL: {Colors.CYAN}{Colors.BOLD}http://{server_host}:{SERVER_PORT}/galleryout/{Colors.RESET}")
+        print(f"👉 Access URL: {Colors.CYAN}{Colors.BOLD}http://{SERVER_HOST}:{SERVER_PORT}/galleryout/{Colors.RESET}")
 
     if debug_mode:
         print(f"   {Colors.YELLOW}Debug mode: ON (Vite dev server expected on :5173){Colors.RESET}")
     print(f"   (Press CTRL+C to stop)\n")
 
-    app.run(host=server_host, port=SERVER_PORT, debug=debug_mode)
+    app.run(host=SERVER_HOST, port=SERVER_PORT, debug=debug_mode)

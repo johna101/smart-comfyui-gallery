@@ -68,6 +68,14 @@ pip install -r requirements.txt
 python run.py
 ```
 
+On first run with no config, the app prints a helpful message and exits. Create a `settings.json` in the working directory:
+```json
+{
+  "comfyui_output_path": "/path/to/comfyui/output",
+  "comfyui_input_path": "/path/to/comfyui/input"
+}
+```
+
 For Vue frontend development (alongside Flask):
 ```bash
 cd frontend
@@ -83,18 +91,38 @@ cd .. && python run.py
 ```
 Built assets in `static/dist/` are served via Vite manifest. No Vite dev server needed.
 
-### PyCharm Configuration
-- Script path: `run.py`
-- Environment variables: defaults hardcoded in `smartgallery/config.py`
-- Debug mode: `FLASK_DEBUG=true` enables auto-reload and Vite dev script injection
+### Configuration System
+Config resolution order (highest priority wins):
+1. **Environment variables** — for Docker, scripts, CI
+2. **settings.json** — primary config method for local use
+3. **Smart defaults** — derived from `SMART_GALLERY_ROOT` (env var or CWD)
 
-### Key Environment Variables
+`settings.json` lives in `SMART_GALLERY_ROOT/settings.json`. The `data/` subdir is auto-created for DB, thumbnails, and caches.
+
+Available settings.json keys:
+- `comfyui_output_path` — ComfyUI output folder (required)
+- `comfyui_input_path` — ComfyUI input folder (optional)
+- `data_path` — cache/DB location (default: `SMART_GALLERY_ROOT/data`)
+- `ffprobe_path` — path to ffprobe, or `"auto"` (default: auto-detect)
+- `server_host` — default `0.0.0.0`
+- `server_port` — default `8189`
+- `delete_mode` — trash folder path, or `"permanent"` (default: permanent)
+- `thumbnail_width` — default `300`
+- `enable_ai_search` — default `false`
+
+### Environment Variables (override settings.json)
+- `SMART_GALLERY_ROOT` — root directory for settings.json and data/ (default: CWD)
 - `BASE_OUTPUT_PATH` — ComfyUI output folder
 - `BASE_INPUT_PATH` — ComfyUI input folder
-- `BASE_SMARTGALLERY_PATH` — cache/DB location (must exist and be writable)
+- `BASE_SMARTGALLERY_PATH` — cache/DB location
 - `SERVER_HOST` — default `0.0.0.0` (all interfaces)
 - `SERVER_PORT` — default `8189`
-- `FLASK_DEBUG` — enables debug mode, auto-reload, Vite dev injection
+- `FLASK_DEBUG` — enables debug mode, auto-reload, Vite dev injection (env-only)
+
+### PyCharm Configuration
+- Script path: `run.py`
+- Create a `settings.json` in the project root, or set env vars in run configuration
+- Debug mode: `FLASK_DEBUG=true` enables auto-reload and Vite dev script injection
 
 FFmpeg/FFprobe required for video support (thumbnails, storyboards, streaming).
 Linux: ensure firewall allows SERVER_PORT (e.g., `firewall-cmd --add-port=8189/tcp`).
@@ -166,6 +194,7 @@ No automated test suite. Changes verified manually by running the app against re
 ## Known Issues
 - Sidebar: collapsing parent when child is selected doesn't always collapse visually
 - Sidebar: initial scroll-to-active-folder unreliable on first load for deep folders
+- Workflow keyword search uses `LIKE '%keyword%'` which forces full table scan at 49K+ files — FTS5 virtual table is the correct future solution
 
 ## File Support
 - Images: PNG, JPG, JPEG, WebP (static and animated)

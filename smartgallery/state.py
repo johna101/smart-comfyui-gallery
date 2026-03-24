@@ -2,9 +2,12 @@
 # Centralized location for all mutable state shared across modules.
 
 # Gallery view cache (list of file dicts for current view)
+# Single-value cache: replaced wholesale on each folder navigation, not a growing cache.
+# Bounded by total file count. Used by load_more endpoint for pagination.
 gallery_view_cache = []
 
 # Folder configuration cache (dict of folder_key -> folder_info)
+# Single-value cache: replaced on force_refresh or folder mutations, not a growing cache.
 folder_config_cache = None
 
 # FFprobe executable path (set during initialization)

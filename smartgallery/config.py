@@ -1,8 +1,9 @@
 # Smart Gallery for ComfyUI - Configuration Module
-# All environment variable parsing, constants, and derived settings.
+# Settings resolution: env vars > settings.json > smart defaults.
 
 import os
 import sys
+import json
 import secrets
 import base64
 
@@ -20,45 +21,110 @@ class Colors:
 
 
 # ============================================================================
-# USER CONFIGURATION
+# SETTINGS.JSON LOADER
 # ============================================================================
 
-BASE_OUTPUT_PATH = os.environ.get('BASE_OUTPUT_PATH', '/Volumes/Titan/Files/comfyui-images/arch-comfyui-output-2025-01-16')
-BASE_INPUT_PATH = os.environ.get('BASE_INPUT_PATH', '/Volumes/Titan/Files/comfyui-images')
-BASE_SMARTGALLERY_PATH = os.environ.get('BASE_SMARTGALLERY_PATH', BASE_OUTPUT_PATH)
-FFPROBE_MANUAL_PATH = os.environ.get('FFPROBE_MANUAL_PATH', "/opt/homebrew/bin/ffprobe")
-SERVER_PORT = int(os.environ.get('SERVER_PORT', 8189))
-THUMBNAIL_WIDTH = int(os.environ.get('THUMBNAIL_WIDTH', 300))
-WEBP_ANIMATED_FPS = float(os.environ.get('WEBP_ANIMATED_FPS', 16.0))
-PAGE_SIZE = int(os.environ.get('PAGE_SIZE', 100))
+def _load_settings():
+    """Load settings from SMART_GALLERY_ROOT/settings.json if it exists."""
+    root = os.environ.get('SMART_GALLERY_ROOT', os.getcwd())
+    settings_path = os.path.join(root, 'settings.json')
+    settings = {}
+    if os.path.isfile(settings_path):
+        try:
+            with open(settings_path, 'r') as f:
+                settings = json.load(f)
+        except json.JSONDecodeError as e:
+            print(f"{Colors.RED}{Colors.BOLD}ERROR: Failed to parse {settings_path}: {e}{Colors.RESET}")
+            sys.exit(1)
+        except OSError as e:
+            print(f"{Colors.RED}{Colors.BOLD}ERROR: Cannot read {settings_path}: {e}{Colors.RESET}")
+            sys.exit(1)
+    return root, settings, settings_path
+
+SMART_GALLERY_ROOT, _settings, _settings_path = _load_settings()
+
+# Track where each config value came from (for print_configuration)
+_config_sources = {}
+
+
+def _resolve(env_name, json_key, default, cast=str):
+    """Three-tier config resolution: env var > settings.json > default."""
+    env_val = os.environ.get(env_name)
+    if env_val is not None and env_val != '':
+        _config_sources[env_name] = 'env'
+        return cast(env_val)
+    if json_key and json_key in _settings:
+        _config_sources[env_name] = 'settings.json'
+        val = _settings[json_key]
+        # JSON values are already typed (bool, int, etc.) — only cast strings
+        if isinstance(val, str) or not isinstance(val, type(default if default is not None else '')):
+            return cast(val)
+        return val
+    _config_sources[env_name] = 'default'
+    if default is None:
+        return None
+    return cast(default) if isinstance(default, str) else default
+
+
+def _bool_cast(v):
+    """Handle both string 'true'/'false' (env) and native bool (JSON)."""
+    if isinstance(v, bool):
+        return v
+    return str(v).lower() == 'true'
+
+
+def _optional_int(v):
+    """Handle None-or-int values like MAX_PARALLEL_WORKERS."""
+    if v is None or v == '' or v == 'null':
+        return None
+    return int(v)
+
+
+# ============================================================================
+# USER CONFIGURATION — resolved from env > settings.json > defaults
+# ============================================================================
+
+BASE_OUTPUT_PATH = _resolve('BASE_OUTPUT_PATH', 'comfyui_output_path', None)
+BASE_INPUT_PATH = _resolve('BASE_INPUT_PATH', 'comfyui_input_path', None)
+
+# Data path defaults to SMART_GALLERY_ROOT/data (not inside ComfyUI output)
+_default_data_path = os.path.join(SMART_GALLERY_ROOT, 'data')
+BASE_SMARTGALLERY_PATH = _resolve('BASE_SMARTGALLERY_PATH', 'data_path', _default_data_path)
+
+FFPROBE_MANUAL_PATH = _resolve('FFPROBE_MANUAL_PATH', 'ffprobe_path', None)
+if FFPROBE_MANUAL_PATH == 'auto':
+    FFPROBE_MANUAL_PATH = None
+
+SERVER_HOST = _resolve('SERVER_HOST', 'server_host', '0.0.0.0')
+SERVER_PORT = _resolve('SERVER_PORT', 'server_port', 8189, cast=int)
+THUMBNAIL_WIDTH = _resolve('THUMBNAIL_WIDTH', 'thumbnail_width', 300, cast=int)
+WEBP_ANIMATED_FPS = _resolve('WEBP_ANIMATED_FPS', 'webp_animated_fps', 16.0, cast=float)
+PAGE_SIZE = _resolve('PAGE_SIZE', 'page_size', 100, cast=int)
 SPECIAL_FOLDERS = ['video', 'audio']
-BATCH_SIZE = int(os.environ.get('BATCH_SIZE', 500))
-STREAM_THRESHOLD_MB = int(os.environ.get('STREAM_THRESHOLD_MB', 20))
+BATCH_SIZE = _resolve('BATCH_SIZE', 'batch_size', 500, cast=int)
+STREAM_THRESHOLD_MB = _resolve('STREAM_THRESHOLD_MB', 'stream_threshold_mb', 20, cast=int)
 STREAM_THRESHOLD_BYTES = STREAM_THRESHOLD_MB * 1024 * 1024
-MAX_PARALLEL_WORKERS = os.environ.get('MAX_PARALLEL_WORKERS', None)
-if MAX_PARALLEL_WORKERS is not None and MAX_PARALLEL_WORKERS != "":
-    MAX_PARALLEL_WORKERS = int(MAX_PARALLEL_WORKERS)
-else:
-    MAX_PARALLEL_WORKERS = None
+MAX_PARALLEL_WORKERS = _resolve('MAX_PARALLEL_WORKERS', 'max_parallel_workers', None, cast=_optional_int)
 SECRET_KEY = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 MAX_PREFIX_DROPDOWN_ITEMS = 100
 
 # --- DELETE / TRASH CONFIG ---
-DELETE_TO = os.environ.get('DELETE_TO', None)
+DELETE_TO = _resolve('DELETE_TO', 'delete_mode', None)
 TRASH_FOLDER = None
 
-if DELETE_TO and DELETE_TO.strip():
+# "permanent" in settings.json means no trash — same as None
+if DELETE_TO and DELETE_TO.strip() and DELETE_TO.strip().lower() != 'permanent':
     DELETE_TO = DELETE_TO.strip()
     TRASH_FOLDER = os.path.join(DELETE_TO, 'SmartGallery')
 
     if not os.path.exists(DELETE_TO):
         print(f"{Colors.RED}{Colors.BOLD}CRITICAL ERROR: DELETE_TO path does not exist: {DELETE_TO}{Colors.RESET}")
-        print(f"{Colors.RED}Please create the directory or unset the DELETE_TO environment variable.{Colors.RESET}")
+        print(f"{Colors.RED}Please create the directory or remove 'delete_mode' from settings.json.{Colors.RESET}")
         sys.exit(1)
 
     if not os.access(DELETE_TO, os.W_OK):
         print(f"{Colors.RED}{Colors.BOLD}CRITICAL ERROR: DELETE_TO path is not writable: {DELETE_TO}{Colors.RESET}")
-        print(f"{Colors.RED}Please check permissions or unset the DELETE_TO environment variable.{Colors.RESET}")
+        print(f"{Colors.RED}Please check permissions or remove 'delete_mode' from settings.json.{Colors.RESET}")
         sys.exit(1)
 
     if not os.path.exists(TRASH_FOLDER):
@@ -82,7 +148,7 @@ WORKFLOW_PROMPT_BLACKLIST = {
 }
 
 # --- AI SEARCH CONFIGURATION ---
-ENABLE_AI_SEARCH = os.environ.get('ENABLE_AI_SEARCH', 'false').lower() == 'true'
+ENABLE_AI_SEARCH = _resolve('ENABLE_AI_SEARCH', 'enable_ai_search', False, cast=_bool_cast)
 
 # --- CACHE AND FOLDER NAMES ---
 THUMBNAIL_CACHE_FOLDER_NAME = '.thumbnails_cache'
@@ -147,20 +213,83 @@ NODE_PARAM_NAMES = {
 }
 
 
+# ============================================================================
+# CONFIGURATION DISPLAY
+# ============================================================================
+
+def _check_path_status(path):
+    """Check if a path exists and is accessible. Returns (ok, detail)."""
+    if not path:
+        return False, "not configured"
+    if not os.path.exists(path):
+        return False, "NOT FOUND"
+    if os.path.isdir(path) and not os.access(path, os.R_OK):
+        return False, "no read permission"
+    if os.path.isfile(path) and not os.access(path, os.X_OK):
+        return False, "not executable"
+    return True, None
+
+
+def _check_ffprobe_status(path):
+    """Check if ffprobe path is valid and executable."""
+    if not path:
+        return True, "auto-detect"  # Will be resolved later during init
+    if not os.path.isfile(path):
+        return False, "NOT FOUND"
+    if not os.access(path, os.X_OK):
+        return False, "not executable"
+    return True, None
+
+
+def _source_tag(env_name):
+    """Format the source of a config value for display."""
+    src = _config_sources.get(env_name, '')
+    if src == 'env':
+        return f" {Colors.DIM}(env){Colors.RESET}"
+    elif src == 'settings.json':
+        return f" {Colors.DIM}(settings.json){Colors.RESET}"
+    return ""
+
+
 def print_configuration():
-    """Prints the current configuration in a neat, aligned table."""
+    """Prints the current configuration in a neat, aligned table with status checks."""
     print(f"\n{Colors.HEADER}{Colors.BOLD}--- CURRENT CONFIGURATION ---{Colors.RESET}")
 
-    def print_row(key, value, is_path=False):
-        color = Colors.CYAN if is_path else Colors.GREEN
-        print(f" {Colors.BOLD}{key:<25}{Colors.RESET} : {color}{value}{Colors.RESET}")
+    OK = f"{Colors.GREEN}✓{Colors.RESET}"
+    FAIL = f"{Colors.RED}✗{Colors.RESET}"
 
-    print_row("Server Port", SERVER_PORT)
-    print_row("Output Path", BASE_OUTPUT_PATH, True)
-    print_row("Input Path", BASE_INPUT_PATH, True)
-    print_row("Data Path", BASE_SMARTGALLERY_PATH, True)
-    print_row("FFprobe", FFPROBE_MANUAL_PATH if FFPROBE_MANUAL_PATH else "auto-detect", True)
-    print_row("Delete Mode", DELETE_TO if DELETE_TO else "Permanent Delete")
+    def print_row(key, value, is_path=False, status=None, env_name=None):
+        color = Colors.CYAN if is_path else Colors.GREEN
+        status_str = ""
+        if status is not None:
+            ok, detail = status
+            if ok:
+                status_str = f"  {OK}"
+            else:
+                status_str = f"  {FAIL} {Colors.RED}{detail}{Colors.RESET}"
+        src = _source_tag(env_name) if env_name else ""
+        print(f" {Colors.BOLD}{key:<25}{Colors.RESET} : {color}{value}{Colors.RESET}{status_str}{src}")
+
+    # Show settings file status
+    if os.path.isfile(_settings_path):
+        print_row("Settings File", _settings_path, True, (True, None))
+    else:
+        print_row("Settings File", _settings_path, True, (False, "NOT FOUND"))
+
+    print_row("Server Port", SERVER_PORT, env_name='SERVER_PORT')
+    print_row("Output Path", BASE_OUTPUT_PATH or "(not set)", True,
+              _check_path_status(BASE_OUTPUT_PATH), 'BASE_OUTPUT_PATH')
+    print_row("Input Path", BASE_INPUT_PATH or "(not set)", True,
+              _check_path_status(BASE_INPUT_PATH), 'BASE_INPUT_PATH')
+    print_row("Data Path", BASE_SMARTGALLERY_PATH, True,
+              _check_path_status(BASE_SMARTGALLERY_PATH), 'BASE_SMARTGALLERY_PATH')
+
+    ffprobe_display = FFPROBE_MANUAL_PATH if FFPROBE_MANUAL_PATH else "auto-detect"
+    ffprobe_status = _check_ffprobe_status(FFPROBE_MANUAL_PATH)
+    print_row("FFprobe", ffprobe_display, True, ffprobe_status, 'FFPROBE_MANUAL_PATH')
+
+    print_row("Delete Mode", DELETE_TO if DELETE_TO else "Permanent Delete",
+              env_name='DELETE_TO')
     print_row("Thumbnail Width", f"{THUMBNAIL_WIDTH}px")
     print_row("Video Streaming", f"Files > {STREAM_THRESHOLD_MB} MB use range requests")
     if ENABLE_AI_SEARCH:

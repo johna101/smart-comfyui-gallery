@@ -270,7 +270,7 @@ def ai_indexing_add_folder():
             else:
                 for entry in os.scandir(raw_path):
                     if entry.is_file() and not entry.name.startswith('._') and os.path.splitext(entry.name)[1].lower() in valid: files_found.append(entry.path)
-        except: return
+        except OSError: return
 
         # Optimize: Batch Operations
         with get_db_connection() as conn:
@@ -394,7 +394,7 @@ def ai_watched_folders():
             m = pmap.get(r['path'])
             rel = r['path']
             try: rel = os.path.relpath(r['path'], BASE_OUTPUT_PATH)
-            except: pass
+            except ValueError: pass
             if m: res.append({'path': r['path'], 'rel_path': rel, 'key': m['key'], 'display_name': m['name'], 'recursive': bool(r['recursive'])})
             else: res.append({'path': r['path'], 'rel_path': rel, 'key': '_unknown', 'display_name': os.path.basename(r['path']), 'recursive': bool(r['recursive'])})
         return jsonify({'folders': res})
@@ -424,12 +424,12 @@ def ai_indexing_status():
             curr_file = ""
             if processing:
                 try: curr_file = os.path.relpath(processing['file_path'], BASE_OUTPUT_PATH)
-                except: curr_file = os.path.basename(processing['file_path'])
+                except ValueError: curr_file = os.path.basename(processing['file_path'])
 
             next_files = []
             for r in next_rows:
                 try: p = os.path.relpath(r['file_path'], BASE_OUTPUT_PATH)
-                except: p = os.path.basename(r['file_path'])
+                except ValueError: p = os.path.basename(r['file_path'])
 
                 next_files.append({
                     'path': p,

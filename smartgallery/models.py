@@ -88,6 +88,9 @@ def init_db(conn=None):
         conn.execute('CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_files_mtime ON files(mtime);')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_files_name ON files(name);')
+        # Note: workflow_files and workflow_prompt are NOT indexed because keyword search uses
+        # LIKE '%keyword%' (leading wildcard), which forces a full table scan regardless of
+        # B-tree indexes. FTS5 virtual table is the correct future solution for this.
 
         conn.execute('''
             CREATE TABLE IF NOT EXISTS ai_indexing_queue (
