@@ -7,7 +7,7 @@ from flask import Blueprint, redirect, url_for, request, jsonify, render_templat
 from werkzeug.utils import secure_filename
 
 from smartgallery.config import (
-    BASE_OUTPUT_PATH, PAGE_SIZE, ENABLE_AI_SEARCH, PROTECTED_FOLDER_KEYS,
+    BASE_OUTPUT_PATH, ENABLE_AI_SEARCH, PROTECTED_FOLDER_KEYS,
     APP_VERSION, GITHUB_REPO_URL, STREAM_THRESHOLD_BYTES
 )
 from smartgallery import state
@@ -195,7 +195,7 @@ def _build_folder_view(folder_key, args):
     breadcrumbs.reverse()
 
     return {
-        'files': state.gallery_view_cache if args.get('no_pagination') == 'true' else state.gallery_view_cache[:PAGE_SIZE],
+        'files': state.gallery_view_cache,
         'totalFiles': len(state.gallery_view_cache),
         'totalFolderFiles': total_folder_files,
         'totalDbFiles': total_db_files,

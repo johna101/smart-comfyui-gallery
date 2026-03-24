@@ -17,10 +17,6 @@ watch([() => filters.scope, () => filters.recursive], async () => {
     const params: Record<string, string> = {}
     if (filters.scope === 'global') params.scope = 'global'
     if (filters.recursive) params.recursive = 'true'
-    // Request all files (no pagination) so client-side filtering works on full dataset
-    if (filters.scope === 'global' || filters.recursive) {
-      params.no_pagination = 'true'
-    }
     await gallery.loadFolder(gallery.currentFolderKey, params)
   } finally {
     filters.serverLoading = false
