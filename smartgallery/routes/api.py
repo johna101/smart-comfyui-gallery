@@ -1,7 +1,8 @@
 # Smart Gallery for ComfyUI - API Routes
-# Sync status, search options, and file comparison endpoints.
+# Sync status, search options, file comparison, and SSE event stream.
 
 import json
+import queue
 from flask import Blueprint, request, jsonify, abort, Response
 
 from smartgallery.config import BASE_OUTPUT_PATH
@@ -12,6 +13,7 @@ from smartgallery.folders import (
     get_dynamic_folder_config, sync_folder_on_demand, get_filter_options_from_db
 )
 from smartgallery.routes.files import get_file_info_from_db
+from smartgallery.events import event_bus
 
 api_bp = Blueprint('api', __name__, url_prefix='/galleryout')
 
@@ -100,3 +102,36 @@ def compare_files_api():
 
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@api_bp.route('/api/events')
+def event_stream():
+    """SSE endpoint. One persistent connection per browser tab.
+
+    Pushes named events for every file/folder mutation.
+    Sends heartbeat comments every 30s to keep the connection alive.
+    """
+    client_id, q = event_bus.subscribe()
+
+    def generate():
+        try:
+            while True:
+                try:
+                    event = q.get(timeout=30)
+                    yield event.to_sse()
+                except queue.Empty:
+                    # Heartbeat — SSE comment keeps connection alive through proxies
+                    yield ": heartbeat\n\n"
+        except GeneratorExit:
+            pass
+        finally:
+            event_bus.unsubscribe(client_id)
+
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+        }
+    )

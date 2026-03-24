@@ -14,6 +14,7 @@ from smartgallery import state
 from smartgallery.models import get_db_connection
 from smartgallery.processing import process_single_file
 from smartgallery.folders import get_dynamic_folder_config
+from smartgallery.events import publish_event
 
 batch_bp = Blueprint('batch', __name__, url_prefix='/galleryout')
 
@@ -77,6 +78,10 @@ def background_rescan_worker(job_id, files_to_process):
 
         print(f"INFO: [Background] Job {job_id} finished.")
         state.rescan_jobs[job_id]['status'] = 'done'
+        publish_event("rescan_completed", {
+            "folder_key": state.rescan_jobs[job_id].get('folder_key'),
+            "job_id": job_id,
+        }, source="system")
 
     except Exception as e:
         print(f"CRITICAL ERROR in Background Rescan: {e}")
@@ -184,6 +189,11 @@ def rescan_folder():
 
         # Start Worker with Job ID
         threading.Thread(target=background_rescan_worker, args=(job_id, files_to_process), daemon=True).start()
+        publish_event("rescan_started", {
+            "folder_key": folder_key,
+            "job_id": job_id,
+            "total": len(files_to_process),
+        }, source="system")
 
         return jsonify({
             'status': 'started',

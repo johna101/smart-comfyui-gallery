@@ -13,6 +13,7 @@ from flask import Blueprint, request, jsonify, abort
 from smartgallery.config import BASE_OUTPUT_PATH, PROTECTED_FOLDER_KEYS
 from smartgallery.models import get_db_connection
 from smartgallery.folders import get_dynamic_folder_config, sync_folder_on_demand
+from smartgallery.events import publish_event
 
 folders_bp = Blueprint('folders_routes', __name__, url_prefix='/galleryout')
 
@@ -35,6 +36,7 @@ def create_folder():
     try:
         os.makedirs(new_folder_path, exist_ok=False)
         sync_folder_on_demand(parent_path)
+        publish_event("folder_created", {"parent_key": parent_key, "folder_name": folder_name})
         return jsonify({'status': 'success', 'message': f'Folder "{folder_name}" created successfully.'})
     except FileExistsError: return jsonify({'status': 'error', 'message': 'Folder already exists.'}), 400
     except Exception as e: return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -111,6 +113,7 @@ def mount_folder():
         # Refresh Cache
         get_dynamic_folder_config(force_refresh=True)
 
+        publish_event("folder_mounted", {"link_name": link_name})
         return jsonify({'status': 'success', 'message': f'Successfully linked "{link_name}".'})
 
     except Exception as e:
@@ -172,6 +175,7 @@ def unmount_folder():
             conn.commit()
 
         get_dynamic_folder_config(force_refresh=True)
+        publish_event("folder_unmounted", {"folder_key": folder_key})
         return jsonify({'status': 'success', 'message': 'Folder unmounted successfully.'})
 
     except Exception as e:
@@ -346,6 +350,7 @@ def rename_folder(folder_key):
             conn.commit()
 
         get_dynamic_folder_config(force_refresh=True)
+        publish_event("folder_renamed", {"folder_key": folder_key, "new_name": new_name})
         return jsonify({'status': 'success', 'message': 'Folder renamed.'})
 
     except Exception as e:
@@ -434,6 +439,11 @@ def move_folder(folder_key):
             conn.commit()
 
         get_dynamic_folder_config(force_refresh=True)
+        publish_event("folder_moved", {
+            "folder_key": folder_key,
+            "dest_key": dest_key,
+            "folder_name": folder_name,
+        })
         return jsonify({'status': 'success', 'message': f'Folder "{folder_name}" moved successfully.'})
 
     except Exception as e:
@@ -462,5 +472,7 @@ def delete_folder(folder_key):
         shutil.rmtree(folder_path)
 
         get_dynamic_folder_config(force_refresh=True)
+        parent_key = folders[folder_key].get('parent', '_root_')
+        publish_event("folder_deleted", {"folder_key": folder_key, "parent_key": parent_key})
         return jsonify({'status': 'success', 'message': 'Folder deleted.'})
     except Exception as e: return jsonify({'status': 'error', 'message': f'Error: {e}'}), 500

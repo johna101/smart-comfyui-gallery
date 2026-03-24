@@ -12,6 +12,8 @@ from smartgallery.config import DELETE_TO
 from smartgallery.models import get_db_connection
 from smartgallery.processing import safe_delete_file
 from smartgallery.folders import get_dynamic_folder_config
+from smartgallery.events import publish_event
+from smartgallery.utils import folder_key_from_filepath
 
 files_bp = Blueprint('files', __name__, url_prefix='/galleryout')
 
@@ -175,6 +177,13 @@ def move_batch():
                 continue
         conn.commit()
 
+    if moved_count > 0:
+        publish_event("files_moved", {
+            "file_ids": file_ids,
+            "dest_folder_key": dest_key,
+            "moved_count": moved_count,
+        })
+
     message = f"Successfully moved {moved_count} file(s)."
     if skipped_count > 0: message += f" {skipped_count} skipped (same folder)."
     if renamed_count > 0: message += f" {renamed_count} renamed."
@@ -262,6 +271,13 @@ def copy_batch():
 
         conn.commit()
 
+    if copied_count > 0:
+        publish_event("files_copied", {
+            "dest_folder_key": dest_key,
+            "source_file_ids": file_ids,
+            "copied_count": copied_count,
+        })
+
     msg = f"Successfully copied {copied_count} files."
     status = 'success'
     if failed_files:
@@ -311,6 +327,14 @@ def delete_batch():
                 conn.execute(query_delete, ids_to_remove_from_db)
                 conn.commit()
 
+                # Derive folder key from first deleted file's path
+                first_path = files_to_delete[0]['path'] if files_to_delete else None
+                publish_event("files_deleted", {
+                    "file_ids": ids_to_remove_from_db,
+                    "folder_key": folder_key_from_filepath(first_path) if first_path else '_root_',
+                    "count": deleted_count,
+                })
+
         action = "moved to trash" if DELETE_TO else "deleted"
         message = f'Successfully {action} {deleted_count} files.'
 
@@ -335,6 +359,7 @@ def favorite_batch():
         placeholders = ','.join('?' * len(file_ids))
         conn.execute(f"UPDATE files SET is_favorite = ? WHERE id IN ({placeholders})", [1 if status else 0] + file_ids)
         conn.commit()
+    publish_event("files_favorited", {"file_ids": file_ids, "is_favorite": bool(status)})
     return jsonify({'status': 'success', 'message': f"Updated favorites for {len(file_ids)} files."})
 
 
@@ -346,6 +371,7 @@ def toggle_favorite(file_id):
         new_status = 1 - current['is_favorite']
         conn.execute("UPDATE files SET is_favorite = ? WHERE id = ?", (new_status, file_id))
         conn.commit()
+        publish_event("files_favorited", {"file_ids": [file_id], "is_favorite": bool(new_status)})
         return jsonify({'status': 'success', 'is_favorite': bool(new_status)})
 
 
@@ -368,6 +394,11 @@ def delete_file(file_id):
 
         conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
         conn.commit()
+        publish_event("files_deleted", {
+            "file_ids": [file_id],
+            "folder_key": folder_key_from_filepath(filepath),
+            "count": 1,
+        })
         action = "moved to trash" if DELETE_TO else "deleted"
         return jsonify({'status': 'success', 'message': f'File {action} successfully.'})
 
@@ -463,6 +494,13 @@ def rename_file(file_id):
                             (new_id, new_path, final_new_name, file_id))
 
             conn.commit()
+
+            publish_event("file_renamed", {
+                "old_id": file_id,
+                "new_id": new_id,
+                "new_name": final_new_name,
+                "folder_key": folder_key_from_filepath(new_path),
+            })
 
             return jsonify({
                 'status': 'success',

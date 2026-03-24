@@ -17,6 +17,7 @@ from smartgallery.folders import (
     get_dynamic_folder_config, sync_folder_on_demand,
     scan_folder_and_extract_options, get_filter_options_from_db
 )
+from smartgallery.events import publish_event
 
 gallery_bp = Blueprint('gallery', __name__, url_prefix='/galleryout')
 
@@ -300,6 +301,8 @@ def upload_files():
                 file.save(os.path.join(destination_path, filename))
                 success_count += 1
             except Exception as e: errors[filename] = str(e)
-    if success_count > 0: sync_folder_on_demand(destination_path)
+    if success_count > 0:
+        sync_folder_on_demand(destination_path)
+        publish_event("files_uploaded", {"folder_key": folder_key, "count": success_count})
     if errors: return jsonify({'status': 'partial_success', 'message': f'Successfully uploaded {success_count} files. The following files failed: {", ".join(errors.keys())}'}), 207
     return jsonify({'status': 'success', 'message': f'Successfully uploaded {success_count} files.'})

@@ -127,6 +127,18 @@ def init_db(conn=None):
             );
         ''')
 
+        # EVENT LOG TABLE — persistent audit trail for all mutations
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS event_log (
+                id TEXT PRIMARY KEY,
+                timestamp REAL NOT NULL,
+                event_type TEXT NOT NULL,
+                data TEXT NOT NULL,
+                source TEXT NOT NULL
+            );
+        ''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_event_log_ts ON event_log(timestamp);')
+
         # 3. COLUMN MIGRATION
         required_columns = {
             'size': 'INTEGER DEFAULT 0',

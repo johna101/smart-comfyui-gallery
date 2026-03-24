@@ -210,7 +210,7 @@ def run_app():
         else:
             print(f"{Colors.RED}WARNING: FFmpeg not found. Video workflows extraction disabled.{Colors.RESET}")
 
-    # --- START BACKGROUND WATCHER ---
+    # --- START BACKGROUND WATCHERS ---
     if ENABLE_AI_SEARCH:
         try:
             watcher = threading.Thread(target=background_watcher_task, daemon=True)
@@ -218,6 +218,15 @@ def run_app():
             print(f"{Colors.BLUE}INFO: AI Background Watcher started.{Colors.RESET}")
         except Exception as e:
             print(f"{Colors.RED}ERROR: Failed to start AI Watcher: {e}{Colors.RESET}")
+
+    # Start filesystem watcher for real-time change detection
+    try:
+        from smartgallery.watcher import start_watcher
+        fs_observer = start_watcher()
+        if fs_observer:
+            print(f"{Colors.BLUE}INFO: File watcher started on {BASE_OUTPUT_PATH}{Colors.RESET}")
+    except Exception as e:
+        print(f"{Colors.YELLOW}WARNING: File watcher not available: {e}{Colors.RESET}")
 
     # Create and run the Flask app
     app = create_app()

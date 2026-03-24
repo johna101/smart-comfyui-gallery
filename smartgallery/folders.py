@@ -602,6 +602,9 @@ def initialize_gallery():
     with get_db_connection() as conn:
         try:
             init_db(conn)
+            # Prune old event log entries (keep 7 days)
+            conn.execute("DELETE FROM event_log WHERE timestamp < ?", (time.time() - 604800,))
+            conn.commit()
             # Cleanup invalid watched folders before full sync
             if ENABLE_AI_SEARCH:
                 cleanup_invalid_watched_folders(conn)

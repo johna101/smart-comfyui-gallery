@@ -2,6 +2,7 @@
 import { onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useGalleryStore } from '@/stores/gallery'
+import { useEventStream } from '@/composables/useEventStream'
 import FolderSidebar from '@/components/sidebar/FolderSidebar.vue'
 import GalleryToolbar from '@/components/toolbar/GalleryToolbar.vue'
 import LightboxViewer from '@/components/lightbox/LightboxViewer.vue'
@@ -9,6 +10,7 @@ import GalleryGrid from '@/components/gallery/GalleryGrid.vue'
 import SelectionBar from '@/components/gallery/SelectionBar.vue'
 
 const gallery = useGalleryStore()
+useEventStream()
 const router = useRouter()
 const route = useRoute()
 

@@ -8,7 +8,8 @@ import colorsys
 from typing import Dict, Any
 
 from smartgallery.config import (
-    BASE_INPUT_PATH, NODE_CATEGORIES, NODE_CATEGORIES_ORDER, NODE_PARAM_NAMES
+    BASE_OUTPUT_PATH, BASE_INPUT_PATH, NODE_CATEGORIES, NODE_CATEGORIES_ORDER, NODE_PARAM_NAMES,
+    path_to_key
 )
 
 # --- Cache for node colors ---
@@ -29,6 +30,20 @@ def get_standardized_path(filepath):
         return std_path
     except (OSError, ValueError, TypeError):
         return str(filepath)
+
+
+def folder_key_from_filepath(filepath):
+    """Derive the folder_key for the folder containing a file."""
+    dir_path = os.path.dirname(filepath)
+    dir_norm = os.path.normpath(dir_path).replace('\\', '/')
+    base_norm = os.path.normpath(BASE_OUTPUT_PATH).replace('\\', '/') if BASE_OUTPUT_PATH else ''
+    if dir_norm == base_norm:
+        return '_root_'
+    try:
+        rel = os.path.relpath(dir_norm, base_norm).replace('\\', '/')
+        return path_to_key(rel)
+    except ValueError:
+        return '_root_'
 
 
 def normalize_smart_path(path_str):
