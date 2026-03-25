@@ -22,6 +22,14 @@ from smartgallery.models import get_db_connection, init_db
 from smartgallery.processing import process_single_file, find_ffprobe_path
 from smartgallery.utils import get_standardized_path
 from smartgallery import state
+from smartgallery.queries import (
+    FILES_UPSERT, FILES_SELECT_PATH_MTIME_ALL, FILES_DELETE_BY_PATH,
+    FILES_SELECT_PATH_MTIME_FOLDER, FILES_COUNT,
+    MOUNTED_SELECT_ALL, AI_WATCHED_SELECT, AI_WATCHED_SELECT_PATHS,
+    AI_INDEX_QUEUE_DELETE_COMPLETED_OLD, AI_INDEX_QUEUE_CHECK_ACTIVE,
+    FILES_SELECT_AI_STATUS, FILES_SELECT_AI_STATUS_NORMALIZED,
+    AI_INDEX_QUEUE_UPSERT, EVENT_LOG_PRUNE,
+)
 
 
 def get_dynamic_folder_config(force_refresh=False):
@@ -57,7 +65,7 @@ def get_dynamic_folder_config(force_refresh=False):
         if ENABLE_AI_SEARCH:
             try:
                 with get_db_connection() as conn:
-                    rows = conn.execute("SELECT path, recursive FROM ai_watched_folders").fetchall()
+                    rows = conn.execute(AI_WATCHED_SELECT).fetchall()
                     for r in rows:
                         w_path = os.path.normpath(r['path']).replace('\\', '/')
                         watched_rules.append((w_path, bool(r['recursive'])))
@@ -67,7 +75,7 @@ def get_dynamic_folder_config(force_refresh=False):
         mounted_paths = set()
         try:
             with get_db_connection() as conn:
-                rows = conn.execute("SELECT path FROM mounted_folders").fetchall()
+                rows = conn.execute(MOUNTED_SELECT_ALL).fetchall()
                 for r in rows:
                     # Normalize for comparison
                     mounted_paths.add(os.path.normpath(r['path']).replace('\\', '/'))
@@ -154,9 +162,9 @@ def background_watcher_task():
             if ENABLE_AI_SEARCH:
                 with get_db_connection() as conn:
                     # 1. Cleanup very old jobs to keep table light (> 3 days)
-                    conn.execute("DELETE FROM ai_indexing_queue WHERE status='completed' AND created_at < ?", (time.time() - 259200,))
+                    conn.execute(AI_INDEX_QUEUE_DELETE_COMPLETED_OLD, (time.time() - 259200,))
 
-                    watched = conn.execute("SELECT path, recursive FROM ai_watched_folders").fetchall()
+                    watched = conn.execute(AI_WATCHED_SELECT).fetchall()
 
                     for row in watched:
                         folder_path = row['path']
@@ -189,10 +197,7 @@ def background_watcher_task():
                             # 1. CHECK ACTIVE STATUS
                             # Only skip if it is actively waiting or running.
                             # Do NOT skip if it is 'completed' or 'error' (we might need to retry/update).
-                            active_job = conn.execute("""
-                                SELECT 1 FROM ai_indexing_queue
-                                WHERE file_path = ? AND status IN ('pending', 'processing', 'waiting_gpu')
-                            """, (p_key,)).fetchone()
+                            active_job = conn.execute(AI_INDEX_QUEUE_CHECK_ACTIVE, (p_key,)).fetchone()
 
                             if active_job:
                                 continue # Busy, come back later
@@ -203,12 +208,12 @@ def background_watcher_task():
                             # to ensure we find the record even if slashes differ.
 
                             # Try exact match first
-                            file_row = conn.execute("SELECT id, mtime, ai_last_scanned FROM files WHERE path = ?", (raw_path,)).fetchone()
+                            file_row = conn.execute(FILES_SELECT_AI_STATUS, (raw_path,)).fetchone()
 
                             # Fallback: Normalized Match
                             if not file_row:
                                 norm_p = raw_path.replace('\\', '/')
-                                file_row = conn.execute("SELECT id, mtime, ai_last_scanned FROM files WHERE REPLACE(path, '\\', '/') = ?", (norm_p,)).fetchone()
+                                file_row = conn.execute(FILES_SELECT_AI_STATUS_NORMALIZED, (norm_p,)).fetchone()
 
                             if not file_row:
                                 # File exists on disk but NOT in DB.
@@ -231,15 +236,7 @@ def background_watcher_task():
                             if needs_index:
                                 # UPSERT: If exists (e.g. 'completed'), revive to 'pending'. If new, insert.
                                 # This fixes the issue where completed items were ignored even after reset.
-                                conn.execute("""
-                                    INSERT INTO ai_indexing_queue
-                                    (file_path, file_id, status, created_at, force_index, params)
-                                    VALUES (?, ?, 'pending', ?, 0, '{}')
-                                    ON CONFLICT(file_path) DO UPDATE SET
-                                        status = 'pending',
-                                        file_id = excluded.file_id,
-                                        created_at = excluded.created_at
-                                """, (p_key, file_id, time.time()))
+                                conn.execute(AI_INDEX_QUEUE_UPSERT, (p_key, file_id, time.time()))
 
                     conn.commit()
 
@@ -253,7 +250,7 @@ def full_sync_database(conn):
     start_time = time.time()
 
     all_folders = get_dynamic_folder_config(force_refresh=True)
-    db_files = {row['path']: row['mtime'] for row in conn.execute('SELECT path, mtime FROM files').fetchall()}
+    db_files = {row['path']: row['mtime'] for row in conn.execute(FILES_SELECT_PATH_MTIME_ALL).fetchall()}
 
     disk_files = {}
     print("INFO: Scanning directories on disk...")
@@ -316,45 +313,7 @@ def full_sync_database(conn):
             print(f"INFO: Inserting {len(results)} processed records into the database...")
             for i in range(0, len(results), BATCH_SIZE):
                 batch = results[i:i + BATCH_SIZE]
-                conn.executemany("""
-                    INSERT INTO files (id, path, mtime, name, type, duration, dimensions, has_workflow, size, last_scanned, workflow_files, workflow_prompt)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET
-                        path = excluded.path,
-                        name = excluded.name,
-                        type = excluded.type,
-                        duration = excluded.duration,
-                        dimensions = excluded.dimensions,
-                        has_workflow = excluded.has_workflow,
-                        size = excluded.size,
-                        last_scanned = excluded.last_scanned,
-                        workflow_files = excluded.workflow_files,
-                        workflow_prompt = excluded.workflow_prompt,
-
-                        -- LOGICA CONDIZIONALE:
-                        is_favorite = CASE
-                            WHEN ABS(files.mtime - excluded.mtime) > 0.1 THEN 0
-                            ELSE files.is_favorite
-                        END,
-
-                        ai_caption = CASE
-                            WHEN ABS(files.mtime - excluded.mtime) > 0.1 THEN NULL
-                            ELSE files.ai_caption
-                        END,
-
-                        ai_embedding = CASE
-                            WHEN ABS(files.mtime - excluded.mtime) > 0.1 THEN NULL
-                            ELSE files.ai_embedding
-                        END,
-
-                        ai_last_scanned = CASE
-                            WHEN ABS(files.mtime - excluded.mtime) > 0.1 THEN 0
-                            ELSE files.ai_last_scanned
-                        END,
-
-                        -- Aggiorna mtime alla fine
-                        mtime = excluded.mtime
-                """, batch)
+                conn.executemany(FILES_UPSERT, batch)
                 conn.commit()
 
     # SAFETY GUARD FOR DISCONNECTED DRIVES
@@ -363,7 +322,7 @@ def full_sync_database(conn):
 
         # 1. Identify Offline Mounts
         # We fetch all configured mount points to check if their root is accessible
-        mount_rows = conn.execute("SELECT path FROM mounted_folders").fetchall()
+        mount_rows = conn.execute(MOUNTED_SELECT_ALL).fetchall()
         offline_prefixes = []
 
         for row in mount_rows:
@@ -400,7 +359,7 @@ def full_sync_database(conn):
             print(f"INFO: Removing {len(safe_to_delete)} obsolete file entries from the database...")
 
             paths_to_remove = [(p,) for p in safe_to_delete]
-            conn.executemany("DELETE FROM files WHERE path = ?", paths_to_remove)
+            conn.executemany(FILES_DELETE_BY_PATH, paths_to_remove)
 
             # Clean AI Queue for validly deleted files
             std_paths_to_remove = [(get_standardized_path(p),) for p in safe_to_delete]
@@ -424,7 +383,7 @@ def sync_folder_on_demand(folder_path):
                     if os.path.isfile(filepath) and os.path.splitext(name)[1].lower() in valid_extensions:
                         disk_files[filepath] = os.path.getmtime(filepath)
 
-            db_files_query = conn.execute("SELECT path, mtime FROM files WHERE path LIKE ?", (folder_path + os.sep + '%',)).fetchall()
+            db_files_query = conn.execute(FILES_SELECT_PATH_MTIME_FOLDER, (folder_path + os.sep + '%',)).fetchall()
             db_files = {row['path']: row['mtime'] for row in db_files_query if os.path.normpath(os.path.dirname(row['path'])) == os.path.normpath(folder_path)}
 
             disk_filepaths, db_filepaths = set(disk_files.keys()), set(db_files.keys())
@@ -463,45 +422,7 @@ def sync_folder_on_demand(folder_path):
                         yield f"data: {json.dumps(progress_data)}\n\n"
 
                 if data_to_upsert:
-                    conn.executemany("""
-                        INSERT INTO files (id, path, mtime, name, type, duration, dimensions, has_workflow, size, last_scanned, workflow_files, workflow_prompt)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(id) DO UPDATE SET
-                            path = excluded.path,
-                            name = excluded.name,
-                            type = excluded.type,
-                            duration = excluded.duration,
-                            dimensions = excluded.dimensions,
-                            has_workflow = excluded.has_workflow,
-                            size = excluded.size,
-                            last_scanned = excluded.last_scanned,
-                            workflow_files = excluded.workflow_files,
-                            workflow_prompt = excluded.workflow_prompt,
-
-                            -- LOGICA CONDIZIONALE:
-                            is_favorite = CASE
-                                WHEN ABS(files.mtime - excluded.mtime) > 0.1 THEN 0
-                                ELSE files.is_favorite
-                            END,
-
-                            ai_caption = CASE
-                                WHEN ABS(files.mtime - excluded.mtime) > 0.1 THEN NULL
-                                ELSE files.ai_caption
-                            END,
-
-                            ai_embedding = CASE
-                                WHEN ABS(files.mtime - excluded.mtime) > 0.1 THEN NULL
-                                ELSE files.ai_embedding
-                            END,
-
-                            ai_last_scanned = CASE
-                                WHEN ABS(files.mtime - excluded.mtime) > 0.1 THEN 0
-                                ELSE files.ai_last_scanned
-                            END,
-
-                            -- Aggiorna mtime alla fine
-                            mtime = excluded.mtime
-                    """, data_to_upsert)
+                    conn.executemany(FILES_UPSERT, data_to_upsert)
 
             if files_to_delete:
                 conn.executemany("DELETE FROM files WHERE path IN (?)", [(p,) for p in files_to_delete])
@@ -563,7 +484,7 @@ def cleanup_invalid_watched_folders(conn):
     and we DO NOT remove it automatically to prevent config loss.
     """
     try:
-        rows = conn.execute("SELECT path FROM ai_watched_folders").fetchall()
+        rows = conn.execute(AI_WATCHED_SELECT_PATHS).fetchall()
 
         for row in rows:
             path = row['path']
@@ -585,7 +506,7 @@ def initialize_gallery_fast_no_db_check():
         try:
             init_db(conn)
             # 4. Fallback check for empty DB on existing install
-            file_count = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+            file_count = conn.execute(FILES_COUNT).fetchone()[0]
             if file_count == 0:
                 print(f"{Colors.BLUE}INFO: Database file exists but is empty. Scanning...{Colors.RESET}")
                 full_sync_database(conn)
@@ -603,7 +524,7 @@ def initialize_gallery():
         try:
             init_db(conn)
             # Prune old event log entries (keep 7 days)
-            conn.execute("DELETE FROM event_log WHERE timestamp < ?", (time.time() - 604800,))
+            conn.execute(EVENT_LOG_PRUNE, (time.time() - 604800,))
             conn.commit()
             # Cleanup invalid watched folders before full sync
             if ENABLE_AI_SEARCH:

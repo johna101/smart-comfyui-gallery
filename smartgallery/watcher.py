@@ -18,6 +18,7 @@ from smartgallery.models import get_db_connection
 from smartgallery.processing import process_single_file
 from smartgallery.events import publish_event
 from smartgallery.utils import folder_key_from_filepath
+from smartgallery.queries import FILES_UPSERT, FILES_EXISTS_BY_ID, FILES_DELETE_BY_ID
 
 logger = logging.getLogger(__name__)
 
@@ -33,28 +34,6 @@ EXCLUDED_DIRS = {
     ZIP_CACHE_FOLDER_NAME, AI_MODELS_FOLDER_NAME,
     'venv', 'venv-ai', '.git', 'node_modules', '__pycache__'
 }
-
-# DB upsert query — same conditional logic as full_sync_database()
-_UPSERT_SQL = """
-    INSERT INTO files (id, path, mtime, name, type, duration, dimensions, has_workflow, size, last_scanned, workflow_files, workflow_prompt)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-        path = excluded.path,
-        name = excluded.name,
-        type = excluded.type,
-        duration = excluded.duration,
-        dimensions = excluded.dimensions,
-        has_workflow = excluded.has_workflow,
-        size = excluded.size,
-        last_scanned = excluded.last_scanned,
-        workflow_files = excluded.workflow_files,
-        workflow_prompt = excluded.workflow_prompt,
-        is_favorite = CASE WHEN ABS(files.mtime - excluded.mtime) > 0.1 THEN 0 ELSE files.is_favorite END,
-        ai_caption = CASE WHEN ABS(files.mtime - excluded.mtime) > 0.1 THEN NULL ELSE files.ai_caption END,
-        ai_embedding = CASE WHEN ABS(files.mtime - excluded.mtime) > 0.1 THEN NULL ELSE files.ai_embedding END,
-        ai_last_scanned = CASE WHEN ABS(files.mtime - excluded.mtime) > 0.1 THEN 0 ELSE files.ai_last_scanned END,
-        mtime = excluded.mtime
-"""
 
 
 def _should_ignore(path):
@@ -95,7 +74,7 @@ def _process_and_upsert(filepath):
             return None
 
         with get_db_connection() as conn:
-            conn.execute(_UPSERT_SQL, result)
+            conn.execute(FILES_UPSERT, result)
             conn.commit()
 
         return result[0]  # file_id
@@ -193,9 +172,9 @@ class SmartGalleryHandler(FileSystemEventHandler):
         try:
             with get_db_connection() as conn:
                 # Check if it actually exists in DB before deleting
-                row = conn.execute("SELECT id FROM files WHERE id = ?", (file_id,)).fetchone()
+                row = conn.execute(FILES_EXISTS_BY_ID, (file_id,)).fetchone()
                 if row:
-                    conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
+                    conn.execute(FILES_DELETE_BY_ID, (file_id,))
                     conn.commit()
                     publish_event("files_removed", {
                         "folder_key": folder_key_from_filepath(filepath),
@@ -210,7 +189,7 @@ class SmartGalleryHandler(FileSystemEventHandler):
         old_id = hashlib.md5(src_path.encode()).hexdigest()
         try:
             with get_db_connection() as conn:
-                conn.execute("DELETE FROM files WHERE id = ?", (old_id,))
+                conn.execute(FILES_DELETE_BY_ID, (old_id,))
                 conn.commit()
         except Exception as e:
             logger.warning("Watcher: failed to remove old record for move: %s", e)

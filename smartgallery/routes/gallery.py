@@ -18,6 +18,10 @@ from smartgallery.folders import (
     scan_folder_and_extract_options, get_filter_options_from_db
 )
 from smartgallery.events import publish_event
+from smartgallery.queries import (
+    FILES_SELECT_GALLERY, FILES_COUNT, FILES_SELECT_AI_SEARCH,
+    AI_SEARCH_QUEUE_SELECT_INFO,
+)
 
 gallery_bp = Blueprint('gallery', __name__, url_prefix='/galleryout')
 
@@ -62,15 +66,11 @@ def _build_folder_view(folder_key, args):
     if ENABLE_AI_SEARCH and ai_session_id:
         with get_db_connection() as conn:
             try:
-                queue_info = conn.execute("SELECT query, status FROM ai_search_queue WHERE session_id = ?", (ai_session_id,)).fetchone()
+                queue_info = conn.execute(AI_SEARCH_QUEUE_SELECT_INFO, (ai_session_id,)).fetchone()
                 if queue_info and queue_info['status'] == 'completed':
                     is_ai_search = True
                     ai_query_text = queue_info['query']
-                    rows = conn.execute('''
-                        SELECT f.*, r.score FROM ai_search_results r
-                        JOIN files f ON r.file_id = f.id
-                        WHERE r.session_id = ? ORDER BY r.score DESC
-                    ''', (ai_session_id,)).fetchall()
+                    rows = conn.execute(FILES_SELECT_AI_SEARCH, (ai_session_id,)).fetchall()
 
                     files_list = []
                     for row in rows:
@@ -149,8 +149,8 @@ def _build_folder_view(folder_key, args):
             sort_order = "ASC" if args.get('sort_order', 'desc').lower() == 'asc' else "DESC"
             where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
-            # Exclude ai_embedding blob from results
-            query = f"SELECT id, path, mtime, name, type, duration, dimensions, has_workflow, is_favorite, size, last_scanned, workflow_files, workflow_prompt, ai_last_scanned, ai_caption, ai_error FROM files {where_clause} ORDER BY {sort_by} {sort_order}"
+            # v_files view excludes ai_embedding blob
+            query = FILES_SELECT_GALLERY.format(where_clause=where_clause, sort_by=sort_by, sort_order=sort_order)
             rows = conn.execute(query, params).fetchall()
 
             state.gallery_view_cache = [dict(row) for row in rows]
@@ -178,7 +178,7 @@ def _build_folder_view(folder_key, args):
     total_db_files = 0
     with get_db_connection() as conn_opts:
         try:
-            total_db_files = conn_opts.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+            total_db_files = conn_opts.execute(FILES_COUNT).fetchone()[0]
         except Exception:
             total_db_files = 0
 

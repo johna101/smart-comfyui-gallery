@@ -9,6 +9,7 @@ import time
 import uuid
 
 from smartgallery.models import get_db_connection
+from smartgallery.queries import EVENT_LOG_INSERT
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ def publish_event(event_type: str, data: dict, source: str = 'user'):
     try:
         with get_db_connection() as conn:
             conn.execute(
-                "INSERT INTO event_log (id, timestamp, event_type, data, source) VALUES (?, ?, ?, ?, ?)",
+                EVENT_LOG_INSERT,
                 (event.id, event.timestamp, event.event_type, json.dumps(event.data), event.source)
             )
             conn.commit()

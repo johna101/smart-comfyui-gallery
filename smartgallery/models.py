@@ -4,6 +4,7 @@
 import sqlite3
 import threading
 from smartgallery.config import DATABASE_FILE, DB_SCHEMA_VERSION
+from smartgallery.queries import init_views
 
 # Thread-local connection cache — avoids opening a new connection per request
 _local = threading.local()
@@ -138,6 +139,9 @@ def init_db(conn=None):
             );
         ''')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_event_log_ts ON event_log(timestamp);')
+
+        # VIEWS — column-safe read interfaces (see queries.py)
+        init_views(conn)
 
         # 3. COLUMN MIGRATION
         required_columns = {

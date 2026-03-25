@@ -14,6 +14,11 @@ from smartgallery.config import BASE_OUTPUT_PATH, PROTECTED_FOLDER_KEYS
 from smartgallery.models import get_db_connection
 from smartgallery.folders import get_dynamic_folder_config, sync_folder_on_demand
 from smartgallery.events import publish_event
+from smartgallery.queries import (
+    MOUNTED_INSERT, MOUNTED_SELECT_BY_PATH, MOUNTED_DELETE,
+    FILES_SELECT_ID_PATH_ALL, FILES_DELETE_BY_ID_BATCH, FILES_DELETE_BY_PATH_LIKE,
+    AI_WATCHED_DELETE, AI_WATCHED_DELETE_LIKE, AI_WATCHED_SELECT_PATHS, AI_WATCHED_UPDATE_PATH,
+)
 
 folders_bp = Blueprint('folders_routes', __name__, url_prefix='/galleryout')
 
@@ -106,8 +111,7 @@ def mount_folder():
         # Register in DB
         with get_db_connection() as conn:
             norm_link_path = os.path.normpath(link_full_path).replace('\\', '/')
-            conn.execute("INSERT OR REPLACE INTO mounted_folders (path, target_source, created_at) VALUES (?, ?, ?)",
-                         (norm_link_path, target_path, time.time()))
+            conn.execute(MOUNTED_INSERT, (norm_link_path, target_path, time.time()))
             conn.commit()
 
         # Refresh Cache
@@ -143,7 +147,7 @@ def unmount_folder():
     is_safe_mount = False
     with get_db_connection() as conn:
         norm_path = os.path.normpath(path_to_remove).replace('\\', '/')
-        row = conn.execute("SELECT path FROM mounted_folders WHERE path = ?", (norm_path,)).fetchone()
+        row = conn.execute(MOUNTED_SELECT_BY_PATH, (norm_path,)).fetchone()
         if row: is_safe_mount = True
 
     if not is_safe_mount:
@@ -159,14 +163,14 @@ def unmount_folder():
         # Cleanup DB
         with get_db_connection() as conn:
             # 1. Remove from Mounts registry
-            conn.execute("DELETE FROM mounted_folders WHERE path = ?", (norm_path,))
+            conn.execute(MOUNTED_DELETE, (norm_path,))
 
             # 2. Remove from AI Watch list (if present)
-            conn.execute("DELETE FROM ai_watched_folders WHERE path = ?", (path_to_remove,))
+            conn.execute(AI_WATCHED_DELETE, (path_to_remove,))
 
             # 3. CRITICAL: Remove the file records associated with this path from the Gallery DB
             clean_path_for_query = path_to_remove + os.sep + '%'
-            conn.execute("DELETE FROM files WHERE path LIKE ?", (clean_path_for_query,))
+            conn.execute(FILES_DELETE_BY_PATH_LIKE, (clean_path_for_query,))
 
             # 4. Also clean pending AI jobs for these files
             std_path_prefix = path_to_remove.replace('\\', '/')
@@ -290,7 +294,7 @@ def rename_folder(folder_key):
 
     try:
         with get_db_connection() as conn:
-            all_files_cursor = conn.execute("SELECT id, path FROM files")
+            all_files_cursor = conn.execute(FILES_SELECT_ID_PATH_ALL)
 
             update_data = []
             ids_to_clean_collisions = []
@@ -305,14 +309,8 @@ def rename_folder(folder_key):
 
                 # Check containment
                 if check_curr.startswith(check_old):
-
-                    # 1. EXTRACT FILENAME
                     filename = os.path.basename(current_path)
-
-                    # 2. CONSTRUCT NEW PATH EXACTLY LIKE THE SCANNER DOES
                     new_file_path = os.path.join(new_folder_path, filename)
-
-                    # 3. GENERATE ID
                     new_id = hashlib.md5(new_file_path.encode()).hexdigest()
 
                     update_data.append((new_id, new_file_path, row['id']))
@@ -321,7 +319,7 @@ def rename_folder(folder_key):
             # Cleanup Ghost records
             if ids_to_clean_collisions:
                 placeholders = ','.join(['?'] * len(ids_to_clean_collisions))
-                conn.execute(f"DELETE FROM files WHERE id IN ({placeholders})", ids_to_clean_collisions)
+                conn.execute(FILES_DELETE_BY_ID_BATCH.format(placeholders=placeholders), ids_to_clean_collisions)
 
             # Physical Rename
             os.rename(os.path.normpath(old_folder_path), os.path.normpath(new_folder_path))
@@ -331,21 +329,21 @@ def rename_folder(folder_key):
                 conn.executemany("UPDATE files SET id = ?, path = ? WHERE id = ?", update_data)
 
             # Update Watch List
-            watched_folders = conn.execute("SELECT path FROM ai_watched_folders").fetchall()
+            watched_folders = conn.execute(AI_WATCHED_SELECT_PATHS).fetchall()
             for row in watched_folders:
                 w_path = row['path']
                 w_check = w_path.lower() if is_windows else w_path
 
                 if w_check == check_old:
-                    conn.execute("UPDATE ai_watched_folders SET path = ? WHERE path = ?", (new_folder_path, w_path))
+                    conn.execute(AI_WATCHED_UPDATE_PATH, (new_folder_path, w_path))
                 elif w_check.startswith(check_old):
                     if is_windows:
                         suffix = w_path[len(old_folder_path):]
                         new_w_path = new_folder_path + suffix
-                        conn.execute("UPDATE ai_watched_folders SET path = ? WHERE path = ?", (new_w_path, w_path))
+                        conn.execute(AI_WATCHED_UPDATE_PATH, (new_w_path, w_path))
                     else:
                         new_w_path = w_path.replace(old_folder_path, new_folder_path, 1)
-                        conn.execute("UPDATE ai_watched_folders SET path = ? WHERE path = ?", (new_w_path, w_path))
+                        conn.execute(AI_WATCHED_UPDATE_PATH, (new_w_path, w_path))
 
             conn.commit()
 
@@ -392,7 +390,7 @@ def move_folder(folder_key):
 
     try:
         with get_db_connection() as conn:
-            all_files_cursor = conn.execute("SELECT id, path FROM files")
+            all_files_cursor = conn.execute(FILES_SELECT_ID_PATH_ALL)
 
             update_data = []
             ids_to_clean_collisions = []
@@ -405,7 +403,6 @@ def move_folder(folder_key):
                 check_curr = current_path.lower() if is_windows else current_path
 
                 if check_curr.startswith(check_old):
-                    # Preserve relative path structure within the moved folder
                     suffix = current_path[len(old_folder_path):]
                     new_file_path = new_folder_path + suffix
 
@@ -416,7 +413,7 @@ def move_folder(folder_key):
             # Cleanup ghost records
             if ids_to_clean_collisions:
                 placeholders = ','.join(['?'] * len(ids_to_clean_collisions))
-                conn.execute(f"DELETE FROM files WHERE id IN ({placeholders})", ids_to_clean_collisions)
+                conn.execute(FILES_DELETE_BY_ID_BATCH.format(placeholders=placeholders), ids_to_clean_collisions)
 
             # Physical move
             shutil.move(os.path.normpath(old_folder_path), os.path.normpath(new_folder_path))
@@ -426,7 +423,7 @@ def move_folder(folder_key):
                 conn.executemany("UPDATE files SET id = ?, path = ? WHERE id = ?", update_data)
 
             # Update watch list
-            watched_folders = conn.execute("SELECT path FROM ai_watched_folders").fetchall()
+            watched_folders = conn.execute(AI_WATCHED_SELECT_PATHS).fetchall()
             for row in watched_folders:
                 w_path = row['path']
                 w_check = w_path.lower() if is_windows else w_path
@@ -434,7 +431,7 @@ def move_folder(folder_key):
                 if w_check == check_old or w_check.startswith(check_old):
                     suffix = w_path[len(old_folder_path):]
                     new_w_path = new_folder_path + suffix
-                    conn.execute("UPDATE ai_watched_folders SET path = ? WHERE path = ?", (new_w_path, w_path))
+                    conn.execute(AI_WATCHED_UPDATE_PATH, (new_w_path, w_path))
 
             conn.commit()
 
@@ -460,11 +457,11 @@ def delete_folder(folder_key):
         folder_path = folders[folder_key]['path']
         with get_db_connection() as conn:
             # 1. Remove files from DB
-            conn.execute("DELETE FROM files WHERE path LIKE ?", (folder_path + os.sep + '%',))
+            conn.execute(FILES_DELETE_BY_PATH_LIKE, (folder_path + os.sep + '%',))
 
             # 2. AI WATCHED FOLDERS CLEANUP
-            conn.execute("DELETE FROM ai_watched_folders WHERE path = ?", (folder_path,))
-            conn.execute("DELETE FROM ai_watched_folders WHERE path LIKE ?", (folder_path + os.sep + '%',))
+            conn.execute(AI_WATCHED_DELETE, (folder_path,))
+            conn.execute(AI_WATCHED_DELETE_LIKE, (folder_path + os.sep + '%',))
 
             conn.commit()
 

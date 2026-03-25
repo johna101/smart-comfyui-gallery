@@ -15,6 +15,7 @@ from smartgallery.models import get_db_connection
 from smartgallery.processing import process_single_file
 from smartgallery.folders import get_dynamic_folder_config
 from smartgallery.events import publish_event
+from smartgallery.queries import FILES_UPSERT, FILES_SELECT_PATH_NAME_BATCH, FILES_SELECT_PATH_LASTSCAN_FOLDER
 
 batch_bp = Blueprint('batch', __name__, url_prefix='/galleryout')
 
@@ -54,26 +55,7 @@ def background_rescan_worker(job_id, files_to_process):
                         print(f"ERROR: Worker failed for a file: {e}")
 
             if results:
-                conn.executemany("""
-                    INSERT INTO files (id, path, mtime, name, type, duration, dimensions, has_workflow, size, last_scanned, workflow_files, workflow_prompt)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET
-                        path = excluded.path,
-                        name = excluded.name,
-                        type = excluded.type,
-                        duration = excluded.duration,
-                        dimensions = excluded.dimensions,
-                        has_workflow = excluded.has_workflow,
-                        size = excluded.size,
-                        last_scanned = excluded.last_scanned,
-                        workflow_files = excluded.workflow_files,
-                        workflow_prompt = excluded.workflow_prompt,
-                        is_favorite = CASE WHEN ABS(files.mtime - excluded.mtime) > 0.1 THEN 0 ELSE files.is_favorite END,
-                        ai_caption = CASE WHEN ABS(files.mtime - excluded.mtime) > 0.1 THEN NULL ELSE files.ai_caption END,
-                        ai_embedding = CASE WHEN ABS(files.mtime - excluded.mtime) > 0.1 THEN NULL ELSE files.ai_embedding END,
-                        ai_last_scanned = CASE WHEN ABS(files.mtime - excluded.mtime) > 0.1 THEN 0 ELSE files.ai_last_scanned END,
-                        mtime = excluded.mtime
-                """, results)
+                conn.executemany(FILES_UPSERT, results)
                 conn.commit()
 
         print(f"INFO: [Background] Job {job_id} finished.")
@@ -104,7 +86,7 @@ def background_zip_task(job_id, file_ids):
 
         with get_db_connection() as conn:
             placeholders = ','.join(['?'] * len(file_ids))
-            query = f"SELECT path, name FROM files WHERE id IN ({placeholders})"
+            query = FILES_SELECT_PATH_NAME_BATCH.format(placeholders=placeholders)
             files_to_zip = conn.execute(query, file_ids).fetchall()
 
         if not files_to_zip:
@@ -157,7 +139,7 @@ def rescan_folder():
     try:
         files_to_process = []
         with get_db_connection() as conn:
-            query = "SELECT path, last_scanned FROM files WHERE path LIKE ?"
+            query = FILES_SELECT_PATH_LASTSCAN_FOLDER
             rows = conn.execute(query, (folder_path + os.sep + '%',)).fetchall()
 
             folder_path_norm = os.path.normpath(folder_path)

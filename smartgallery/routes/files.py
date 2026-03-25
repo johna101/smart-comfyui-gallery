@@ -14,6 +14,13 @@ from smartgallery.processing import safe_delete_file
 from smartgallery.folders import get_dynamic_folder_config
 from smartgallery.events import publish_event
 from smartgallery.utils import folder_key_from_filepath
+from smartgallery.queries import (
+    FILES_SELECT_BY_ID, FILES_SELECT_BATCH_WITH_AI, FILES_MERGE_UPDATE,
+    FILES_UPDATE_PATH, FILES_DELETE_BY_ID, FILES_DELETE_BY_ID_BATCH,
+    FILES_INSERT_FULL, FILES_SELECT_PATHS_BATCH, FILES_EXISTS_BY_ID,
+    FILES_SELECT_FAVORITE, FILES_UPDATE_FAVORITE, FILES_UPDATE_FAVORITE_BATCH,
+    FILES_SELECT_PATH_BY_ID, FILES_SELECT_METADATA_FOR_RENAME,
+)
 
 files_bp = Blueprint('files', __name__, url_prefix='/galleryout')
 
@@ -27,7 +34,7 @@ def get_file_info_from_db(file_id, column='*'):
     if column not in _ALLOWED_COLUMNS:
         raise ValueError(f"Invalid column: {column}")
     with get_db_connection() as conn:
-        row = conn.execute(f"SELECT {column} FROM files WHERE id = ?", (file_id,)).fetchone()
+        row = conn.execute(FILES_SELECT_BY_ID.format(columns=column), (file_id,)).fetchone()
     if not row: abort(404)
     return dict(row) if column == '*' else row[0]
 
@@ -74,12 +81,7 @@ def move_batch():
     with get_db_connection() as conn:
         # Pre-fetch all file metadata in one query to avoid N+1
         placeholders = ','.join(['?'] * len(file_ids))
-        query_fetch = f"""
-            SELECT id, path, name, size, has_workflow, is_favorite, type, duration, dimensions,
-                   ai_last_scanned, ai_caption, ai_embedding, ai_error, workflow_files, workflow_prompt
-            FROM files WHERE id IN ({placeholders})
-        """
-        all_rows = conn.execute(query_fetch, file_ids).fetchall()
+        all_rows = conn.execute(FILES_SELECT_BATCH_WITH_AI.format(placeholders=placeholders), file_ids).fetchall()
         file_map = {row['id']: dict(row) for row in all_rows}
 
         for file_id in file_ids:
@@ -122,7 +124,7 @@ def move_batch():
 
                 if not os.path.exists(source_path):
                     failed_files.append(f"{source_filename} (not found on disk)")
-                    conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
+                    conn.execute(FILES_DELETE_BY_ID, (file_id,))
                     continue
 
                 # 2. Calculate unique path NATIVELY (No separator forcing)
@@ -140,33 +142,22 @@ def move_batch():
                 new_id = hashlib.md5(final_dest_path.encode()).hexdigest()
 
                 # 5. DB Update / Merge Logic
-                existing_target = conn.execute("SELECT id FROM files WHERE id = ?", (new_id,)).fetchone()
+                existing_target = conn.execute(FILES_EXISTS_BY_ID, (new_id,)).fetchone()
 
                 if existing_target:
                     # MERGE: Target exists (e.g. ghost record). Overwrite with source metadata.
-                    query_merge = """
-                        UPDATE files
-                        SET path = ?, name = ?, mtime = ?,
-                            size = ?, has_workflow = ?, is_favorite = ?,
-                            type = ?, duration = ?, dimensions = ?,
-                            ai_last_scanned = ?, ai_caption = ?, ai_embedding = ?, ai_error = ?,
-                            workflow_files = ?, workflow_prompt = ?
-                        WHERE id = ?
-                    """
-                    conn.execute(query_merge, (
+                    conn.execute(FILES_MERGE_UPDATE, (
                         final_dest_path, final_filename, time.time(),
                         meta['size'], meta['has_workflow'], meta['is_favorite'],
                         meta['type'], meta['duration'], meta['dimensions'],
                         meta['ai_last_scanned'], meta['ai_caption'], meta['ai_embedding'], meta['ai_error'],
-                        meta['workflow_files'],
-                        meta['workflow_prompt'],
+                        meta['workflow_files'], meta['workflow_prompt'],
                         new_id
                     ))
-                    conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
+                    conn.execute(FILES_DELETE_BY_ID, (file_id,))
                 else:
                     # STANDARD: Update existing record path/name.
-                    conn.execute("UPDATE files SET id = ?, path = ?, name = ? WHERE id = ?",
-                                (new_id, final_dest_path, final_filename, file_id))
+                    conn.execute(FILES_UPDATE_PATH, (new_id, final_dest_path, final_filename, file_id))
 
                 moved_count += 1
 
@@ -214,7 +205,7 @@ def copy_batch():
     with get_db_connection() as conn:
         # Pre-fetch all file metadata in one query to avoid N+1
         placeholders = ','.join(['?'] * len(file_ids))
-        all_rows = conn.execute(f"SELECT * FROM files WHERE id IN ({placeholders})", file_ids).fetchall()
+        all_rows = conn.execute(FILES_SELECT_BATCH_WITH_AI.format(placeholders=placeholders), file_ids).fetchall()
         file_map = {row['id']: dict(row) for row in all_rows}
 
         for file_id in file_ids:
@@ -247,17 +238,11 @@ def copy_batch():
 
                 # Insert Copy
                 # We copy AI data too because the image content is identical!
-                conn.execute("""
-                    INSERT INTO files (
-                        id, path, mtime, name, type, duration, dimensions, has_workflow,
-                        size, is_favorite, last_scanned, workflow_files, workflow_prompt,
-                        ai_last_scanned, ai_caption, ai_embedding, ai_error
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
+                conn.execute(FILES_INSERT_FULL, (
                     new_id, final_dest_path, new_mtime, final_filename,
                     file_info['type'], file_info['duration'], file_info['dimensions'],
                     file_info['has_workflow'], file_info['size'],
-                    is_fav, # User Choice
+                    is_fav,
                     file_info['last_scanned'],
                     file_info['workflow_files'], file_info['workflow_prompt'],
                     file_info['ai_last_scanned'], file_info['ai_caption'], file_info['ai_embedding'], file_info['ai_error']
@@ -303,8 +288,7 @@ def delete_batch():
         with get_db_connection() as conn:
             placeholders = ','.join(['?'] * len(file_ids))
 
-            query_select = f"SELECT id, path FROM files WHERE id IN ({placeholders})"
-            files_to_delete = conn.execute(query_select, file_ids).fetchall()
+            files_to_delete = conn.execute(FILES_SELECT_PATHS_BATCH.format(placeholders=placeholders), file_ids).fetchall()
 
             for row in files_to_delete:
                 file_path = row['path']
@@ -323,8 +307,7 @@ def delete_batch():
 
             if ids_to_remove_from_db:
                 db_placeholders = ','.join(['?'] * len(ids_to_remove_from_db))
-                query_delete = f"DELETE FROM files WHERE id IN ({db_placeholders})"
-                conn.execute(query_delete, ids_to_remove_from_db)
+                conn.execute(FILES_DELETE_BY_ID_BATCH.format(placeholders=db_placeholders), ids_to_remove_from_db)
                 conn.commit()
 
                 # Derive folder key from first deleted file's path
@@ -357,7 +340,7 @@ def favorite_batch():
     if not file_ids: return jsonify({'status': 'error', 'message': 'No files selected'}), 400
     with get_db_connection() as conn:
         placeholders = ','.join('?' * len(file_ids))
-        conn.execute(f"UPDATE files SET is_favorite = ? WHERE id IN ({placeholders})", [1 if status else 0] + file_ids)
+        conn.execute(FILES_UPDATE_FAVORITE_BATCH.format(placeholders=placeholders), [1 if status else 0] + file_ids)
         conn.commit()
     publish_event("files_favorited", {"file_ids": file_ids, "is_favorite": bool(status)})
     return jsonify({'status': 'success', 'message': f"Updated favorites for {len(file_ids)} files."})
@@ -366,10 +349,10 @@ def favorite_batch():
 @files_bp.route('/toggle_favorite/<string:file_id>', methods=['POST'])
 def toggle_favorite(file_id):
     with get_db_connection() as conn:
-        current = conn.execute("SELECT is_favorite FROM files WHERE id = ?", (file_id,)).fetchone()
+        current = conn.execute(FILES_SELECT_FAVORITE, (file_id,)).fetchone()
         if not current: abort(404)
         new_status = 1 - current['is_favorite']
-        conn.execute("UPDATE files SET is_favorite = ? WHERE id = ?", (new_status, file_id))
+        conn.execute(FILES_UPDATE_FAVORITE, (new_status, file_id))
         conn.commit()
         publish_event("files_favorited", {"file_ids": [file_id], "is_favorite": bool(new_status)})
         return jsonify({'status': 'success', 'is_favorite': bool(new_status)})
@@ -379,7 +362,7 @@ def toggle_favorite(file_id):
 @files_bp.route('/delete/<string:file_id>', methods=['POST'])
 def delete_file(file_id):
     with get_db_connection() as conn:
-        file_info = conn.execute("SELECT path FROM files WHERE id = ?", (file_id,)).fetchone()
+        file_info = conn.execute(FILES_SELECT_PATH_BY_ID, (file_id,)).fetchone()
         if not file_info:
             return jsonify({'status': 'success', 'message': 'File already deleted from database.'})
 
@@ -392,7 +375,7 @@ def delete_file(file_id):
             print(f"ERROR: Could not delete file {filepath} from disk: {e}")
             return jsonify({'status': 'error', 'message': f'Could not delete file from disk: {e}'}), 500
 
-        conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
+        conn.execute(FILES_DELETE_BY_ID, (file_id,))
         conn.commit()
         publish_event("files_deleted", {
             "file_ids": [file_id],
@@ -417,13 +400,7 @@ def rename_file(file_id):
     try:
         with get_db_connection() as conn:
             # 1. Fetch All Metadata
-            query_fetch = """
-                SELECT
-                    path, name, size, has_workflow, is_favorite, type, duration, dimensions,
-                    ai_last_scanned, ai_caption, ai_embedding, ai_error, workflow_files, workflow_prompt
-                FROM files WHERE id = ?
-            """
-            file_info = conn.execute(query_fetch, (file_id,)).fetchone()
+            file_info = conn.execute(FILES_SELECT_METADATA_FOR_RENAME, (file_id,)).fetchone()
 
             if not file_info:
                 return jsonify({'status': 'error', 'message': 'File not found.'}), 404
@@ -463,35 +440,24 @@ def rename_file(file_id):
                  return jsonify({'status': 'error', 'message': f'File "{final_new_name}" already exists.'}), 409
 
             new_id = hashlib.md5(new_path.encode()).hexdigest()
-            existing_db = conn.execute("SELECT id FROM files WHERE id = ?", (new_id,)).fetchone()
+            existing_db = conn.execute(FILES_EXISTS_BY_ID, (new_id,)).fetchone()
 
             os.rename(old_path, new_path)
 
             if existing_db:
                 # MERGE SCENARIO
-                query_merge = """
-                    UPDATE files
-                    SET path = ?, name = ?, mtime = ?,
-                        size = ?, has_workflow = ?, is_favorite = ?,
-                        type = ?, duration = ?, dimensions = ?,
-                        ai_last_scanned = ?, ai_caption = ?, ai_embedding = ?, ai_error = ?,
-                        workflow_files = ?, workflow_prompt = ?
-                    WHERE id = ?
-                """
-                conn.execute(query_merge, (
+                conn.execute(FILES_MERGE_UPDATE, (
                     new_path, final_new_name, time.time(),
                     meta['size'], meta['has_workflow'], meta['is_favorite'],
                     meta['type'], meta['duration'], meta['dimensions'],
                     meta['ai_last_scanned'], meta['ai_caption'], meta['ai_embedding'], meta['ai_error'],
-                    meta['workflow_files'],
-                    meta['workflow_prompt'],
+                    meta['workflow_files'], meta['workflow_prompt'],
                     new_id
                 ))
-                conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
+                conn.execute(FILES_DELETE_BY_ID, (file_id,))
             else:
                 # STANDARD SCENARIO
-                conn.execute("UPDATE files SET id = ?, path = ?, name = ? WHERE id = ?",
-                            (new_id, new_path, final_new_name, file_id))
+                conn.execute(FILES_UPDATE_PATH, (new_id, new_path, final_new_name, file_id))
 
             conn.commit()
 

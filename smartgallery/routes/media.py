@@ -26,6 +26,7 @@ from smartgallery.processing import extract_workflow, create_thumbnail
 from smartgallery.utils import generate_node_summary
 from smartgallery.parser import ComfyMetadataParser
 from smartgallery.routes.files import get_file_info_from_db
+from smartgallery.queries import FILES_SELECT_FOR_THUMBNAIL, FILES_SELECT_FOR_METADATA
 
 media_bp = Blueprint('media', __name__, url_prefix='/galleryout')
 
@@ -161,7 +162,7 @@ def serve_thumbnail(file_id):
 
     # Only fetch what we need, not the full row (avoids ai_embedding blob)
     with get_db_connection() as conn:
-        row = conn.execute("SELECT path, mtime, type FROM files WHERE id = ?", (file_id,)).fetchone()
+        row = conn.execute(FILES_SELECT_FOR_THUMBNAIL, (file_id,)).fetchone()
     if not row:
         abort(404)
     info = dict(row)
@@ -798,7 +799,7 @@ def check_metadata(file_id):
     """
     try:
         with get_db_connection() as conn:
-            row = conn.execute("SELECT path, has_workflow, ai_caption, ai_last_scanned FROM files WHERE id = ?", (file_id,)).fetchone()
+            row = conn.execute(FILES_SELECT_FOR_METADATA, (file_id,)).fetchone()
 
         if not row:
             return jsonify({'status': 'error', 'message': 'File not found'}), 404
