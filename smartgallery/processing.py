@@ -24,6 +24,15 @@ from smartgallery.utils import normalize_smart_path, format_duration, _is_garbag
 from smartgallery import state
 
 
+def _get_ffmpeg_path():
+    """Resolve the ffmpeg binary path from the known ffprobe location."""
+    if not state.FFPROBE_EXECUTABLE_PATH:
+        return None
+    ffmpeg_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+    candidate = os.path.join(os.path.dirname(state.FFPROBE_EXECUTABLE_PATH), ffmpeg_name)
+    return candidate if os.path.exists(candidate) else ffmpeg_name
+
+
 def safe_delete_file(filepath):
     """
     Safely delete a file by either moving it to trash (if DELETE_TO is configured)
@@ -316,10 +325,7 @@ def create_thumbnail(filepath, file_hash, file_type):
 
         if state.FFPROBE_EXECUTABLE_PATH:
             try:
-                ffmpeg_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
-                ffmpeg_bin = os.path.join(os.path.dirname(state.FFPROBE_EXECUTABLE_PATH), ffmpeg_name)
-                if not os.path.exists(ffmpeg_bin): ffmpeg_bin = ffmpeg_name
-
+                ffmpeg_bin = _get_ffmpeg_path()
                 cmd = [
                     ffmpeg_bin, '-y',
                     '-i', filepath,

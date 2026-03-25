@@ -496,24 +496,6 @@ def cleanup_invalid_watched_folders(conn):
     except Exception as e:
         print(f"ERROR checking watched folders: {e}")
 
-def initialize_gallery_fast_no_db_check():
-    print("INFO: Initializing gallery...")
-    state.FFPROBE_EXECUTABLE_PATH = find_ffprobe_path()
-    os.makedirs(THUMBNAIL_CACHE_DIR, exist_ok=True)
-    os.makedirs(SQLITE_CACHE_DIR, exist_ok=True)
-
-    with get_db_connection() as conn:
-        try:
-            init_db(conn)
-            # 4. Fallback check for empty DB on existing install
-            file_count = conn.execute(FILES_COUNT).fetchone()[0]
-            if file_count == 0:
-                print(f"{Colors.BLUE}INFO: Database file exists but is empty. Scanning...{Colors.RESET}")
-                full_sync_database(conn)
-
-        except sqlite3.DatabaseError as e:
-            print(f"ERROR initializing database: {e}")
-
 def initialize_gallery():
     print("INFO: Initializing gallery...")
     state.FFPROBE_EXECUTABLE_PATH = find_ffprobe_path()

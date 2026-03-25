@@ -1,5 +1,5 @@
 # Smart Gallery for ComfyUI - Gallery Routes
-# Main gallery view, load_more, upload, and redirect routes.
+# Main gallery view, upload, and redirect routes.
 
 import os
 from datetime import datetime
@@ -117,14 +117,16 @@ def _build_folder_view(folder_key, args):
                 except ValueError: pass
 
             if selected_exts:
-                e_cond = [f"name LIKE ?" for e in selected_exts if e.strip()]
-                params.extend([f"%.{e.lstrip('.').lower()}" for e in selected_exts if e.strip()])
-                if e_cond: conditions.append(f"({' OR '.join(e_cond)})")
+                valid_exts = [e for e in selected_exts if e.strip()]
+                if valid_exts:
+                    conditions.append(f"({' OR '.join(['name LIKE ?'] * len(valid_exts))})")
+                    params.extend(f"%.{e.lstrip('.').lower()}" for e in valid_exts)
 
             if selected_prefixes:
-                p_cond = [f"name LIKE ?" for p in selected_prefixes if p.strip()]
-                params.extend([f"{p.strip()}_%" for p in selected_prefixes if p.strip()])
-                if p_cond: conditions.append(f"({' OR '.join(p_cond)})")
+                valid_pfx = [p.strip() for p in selected_prefixes if p.strip()]
+                if valid_pfx:
+                    conditions.append(f"({' OR '.join(['name LIKE ?'] * len(valid_pfx))})")
+                    params.extend(f"{p}_%" for p in valid_pfx)
 
             # --- PATH FILTERING IN SQL (fast) ---
             # Normalize folder path for SQL matching
@@ -276,13 +278,6 @@ def api_folder(folder_key):
     if data is None:
         return jsonify({'error': 'Folder not found'}), 404
     return jsonify(data)
-
-
-@gallery_bp.route('/load_more')
-def load_more():
-    offset = request.args.get('offset', 0, type=int)
-    if offset >= len(state.gallery_view_cache): return jsonify(files=[])
-    return jsonify(files=state.gallery_view_cache[offset:offset + PAGE_SIZE])
 
 
 @gallery_bp.route('/upload', methods=['POST'])

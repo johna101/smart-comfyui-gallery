@@ -25,7 +25,26 @@ from smartgallery.queries import (
 files_bp = Blueprint('files', __name__, url_prefix='/galleryout')
 
 
-# --- Helper Functions (shared with media routes) ---
+# --- Helper Functions ---
+
+# Keys extracted from file_info for merge/move/rename operations
+_META_KEYS = (
+    'size', 'has_workflow', 'is_favorite', 'type', 'duration', 'dimensions',
+    'ai_last_scanned', 'ai_caption', 'ai_embedding', 'ai_error',
+    'workflow_files', 'workflow_prompt',
+)
+
+
+def _meta_params(meta, new_path, new_name, new_id):
+    """Build the parameter tuple for FILES_MERGE_UPDATE from a metadata dict."""
+    return (
+        new_path, new_name, time.time(),
+        meta['size'], meta['has_workflow'], meta['is_favorite'],
+        meta['type'], meta['duration'], meta['dimensions'],
+        meta['ai_last_scanned'], meta['ai_caption'], meta['ai_embedding'], meta['ai_error'],
+        meta['workflow_files'], meta['workflow_prompt'],
+        new_id,
+    )
 
 # Whitelist of columns allowed in dynamic SELECT to prevent SQL injection
 _ALLOWED_COLUMNS = frozenset({'*', 'path', 'name', 'type', 'mtime', 'is_favorite', 'has_workflow'})
@@ -96,22 +115,7 @@ def move_batch():
 
                 source_path = file_info['path']
                 source_filename = file_info['name']
-
-                # Metadata Pack
-                meta = {
-                    'size': file_info['size'],
-                    'has_workflow': file_info['has_workflow'],
-                    'is_favorite': file_info['is_favorite'],
-                    'type': file_info['type'],
-                    'duration': file_info['duration'],
-                    'dimensions': file_info['dimensions'],
-                    'ai_last_scanned': file_info['ai_last_scanned'],
-                    'ai_caption': file_info['ai_caption'],
-                    'ai_embedding': file_info['ai_embedding'],
-                    'ai_error': file_info['ai_error'],
-                    'workflow_files': file_info['workflow_files'],
-                    'workflow_prompt': file_info['workflow_prompt']
-                }
+                meta = {k: file_info[k] for k in _META_KEYS}
 
                 # Check Source vs Dest (OS Agnostic comparison)
                 source_dir_norm = os.path.normpath(os.path.dirname(source_path))
@@ -146,14 +150,7 @@ def move_batch():
 
                 if existing_target:
                     # MERGE: Target exists (e.g. ghost record). Overwrite with source metadata.
-                    conn.execute(FILES_MERGE_UPDATE, (
-                        final_dest_path, final_filename, time.time(),
-                        meta['size'], meta['has_workflow'], meta['is_favorite'],
-                        meta['type'], meta['duration'], meta['dimensions'],
-                        meta['ai_last_scanned'], meta['ai_caption'], meta['ai_embedding'], meta['ai_error'],
-                        meta['workflow_files'], meta['workflow_prompt'],
-                        new_id
-                    ))
+                    conn.execute(FILES_MERGE_UPDATE, _meta_params(meta, final_dest_path, final_filename, new_id))
                     conn.execute(FILES_DELETE_BY_ID, (file_id,))
                 else:
                     # STANDARD: Update existing record path/name.
@@ -209,6 +206,7 @@ def copy_batch():
         file_map = {row['id']: dict(row) for row in all_rows}
 
         for file_id in file_ids:
+            source_filename = f"ID {file_id}"
             try:
                 # 1. Fetch Source info (from pre-fetched map)
                 file_info = file_map.get(file_id)
@@ -407,22 +405,7 @@ def rename_file(file_id):
 
             old_path = file_info['path']
             old_name = file_info['name']
-
-            # Metadata Pack
-            meta = {
-                'size': file_info['size'],
-                'has_workflow': file_info['has_workflow'],
-                'is_favorite': file_info['is_favorite'],
-                'type': file_info['type'],
-                'duration': file_info['duration'],
-                'dimensions': file_info['dimensions'],
-                'ai_last_scanned': file_info['ai_last_scanned'],
-                'ai_caption': file_info['ai_caption'],
-                'ai_embedding': file_info['ai_embedding'],
-                'ai_error': file_info['ai_error'],
-                'workflow_files': file_info['workflow_files'],
-                'workflow_prompt': file_info['workflow_prompt']
-            }
+            meta = {k: file_info[k] for k in _META_KEYS}
 
             # Extension logic
             _, old_ext = os.path.splitext(old_name)
@@ -446,14 +429,7 @@ def rename_file(file_id):
 
             if existing_db:
                 # MERGE SCENARIO
-                conn.execute(FILES_MERGE_UPDATE, (
-                    new_path, final_new_name, time.time(),
-                    meta['size'], meta['has_workflow'], meta['is_favorite'],
-                    meta['type'], meta['duration'], meta['dimensions'],
-                    meta['ai_last_scanned'], meta['ai_caption'], meta['ai_embedding'], meta['ai_error'],
-                    meta['workflow_files'], meta['workflow_prompt'],
-                    new_id
-                ))
+                conn.execute(FILES_MERGE_UPDATE, _meta_params(meta, new_path, final_new_name, new_id))
                 conn.execute(FILES_DELETE_BY_ID, (file_id,))
             else:
                 # STANDARD SCENARIO

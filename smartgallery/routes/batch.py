@@ -73,13 +73,12 @@ def background_rescan_worker(job_id, files_to_process):
 
 def background_zip_task(job_id, file_ids):
     try:
-        if not os.path.exists(ZIP_CACHE_DIR):
-            try:
-                os.makedirs(ZIP_CACHE_DIR, exist_ok=True)
-            except Exception as e:
-                print(f"ERROR: Could not create zip directory: {e}")
-                state.zip_jobs[job_id] = {'status': 'error', 'message': f'Server permission error: {e}'}
-                return
+        try:
+            os.makedirs(ZIP_CACHE_DIR, exist_ok=True)
+        except OSError as e:
+            print(f"ERROR: Could not create zip directory: {e}")
+            state.zip_jobs[job_id] = {'status': 'error', 'message': f'Server permission error: {e}'}
+            return
 
         zip_filename = f"smartgallery_{job_id}.zip"
         zip_filepath = os.path.join(ZIP_CACHE_DIR, zip_filename)

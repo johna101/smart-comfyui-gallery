@@ -31,6 +31,87 @@ from smartgallery.queries import FILES_SELECT_FOR_THUMBNAIL, FILES_SELECT_FOR_ME
 media_bp = Blueprint('media', __name__, url_prefix='/galleryout')
 
 
+def _get_ffmpeg_path():
+    """Resolve the ffmpeg binary path from the known ffprobe location."""
+    if not state.FFPROBE_EXECUTABLE_PATH:
+        return None
+    ffmpeg_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+    candidate = os.path.join(os.path.dirname(state.FFPROBE_EXECUTABLE_PATH), ffmpeg_name)
+    return candidate if os.path.exists(candidate) else ffmpeg_name
+
+
+def _subprocess_flags():
+    """Return creationflags for subprocess calls (hides console window on Windows)."""
+    return subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+
+
+def _probe_video_info(filepath, db_duration_str=None):
+    """Probe a video file for fps, duration, and total frame count.
+
+    Returns (fps, duration, total_frames). Falls back to DB duration string
+    and sensible defaults if probing fails.
+    """
+    fps, duration, total_frames = 0.0, 0.0, 0
+
+    if state.FFPROBE_EXECUTABLE_PATH:
+        try:
+            cmd = [
+                state.FFPROBE_EXECUTABLE_PATH, '-v', 'error', '-select_streams', 'v:0',
+                '-show_entries', 'stream=duration,r_frame_rate,nb_frames',
+                '-of', 'csv=p=0', filepath
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=3,
+                                 creationflags=_subprocess_flags())
+            if res.stdout.strip():
+                parts = res.stdout.strip().split(',')
+                if len(parts) > 0 and parts[0]:
+                    if '/' in parts[0]:
+                        n, d = parts[0].split('/')
+                        fps = float(n) / float(d)
+                    else:
+                        fps = float(parts[0])
+                if len(parts) > 1 and parts[1]:
+                    duration = float(parts[1])
+                if len(parts) > 2 and parts[2]:
+                    total_frames = int(parts[2])
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, ValueError):
+            pass
+
+        # Fallback: format-level duration
+        if duration <= 0:
+            try:
+                cmd2 = [
+                    state.FFPROBE_EXECUTABLE_PATH, '-v', 'error',
+                    '-show_entries', 'format=duration',
+                    '-of', 'default=noprint_wrappers=1:nokey=1', filepath
+                ]
+                res2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=3,
+                                      creationflags=_subprocess_flags())
+                if res2.stdout.strip():
+                    duration = float(res2.stdout.strip())
+            except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, ValueError):
+                pass
+
+    # Fallback: parse DB duration string (e.g. "1:23" or "0:05:30")
+    if duration <= 0 and db_duration_str:
+        try:
+            parts = db_duration_str.split(':')
+            parts.reverse()
+            duration = float(parts[0])
+            if len(parts) > 1: duration += int(parts[1]) * 60
+            if len(parts) > 2: duration += int(parts[2]) * 3600
+        except (ValueError, IndexError):
+            pass
+
+    # Derive missing values
+    if total_frames == 0 and duration > 0 and fps > 0:
+        total_frames = int(duration * fps)
+    elif fps == 0 and duration > 0 and total_frames > 0:
+        fps = total_frames / duration
+
+    return fps, duration, total_frames
+
+
 @media_bp.route('/file/<string:file_id>')
 def serve_file(file_id):
     filepath = get_file_info_from_db(file_id, 'path')
@@ -214,116 +295,19 @@ def get_storyboard(file_id):
             cached_files = sorted(glob.glob(os.path.join(cache_subdir, "frame_*.jpg")))
             if len(cached_files) > 0:
                 urls = [f"/galleryout/storyboard_frame/{file_hash}/{os.path.basename(f)}" for f in cached_files]
-                # We need video info for cached results too — probe it
-                _duration, _fps, _total_frames = 0, 0, 0
-                if info['type'] == 'video' and has_ffmpeg:
-                    try:
-                        _cmd = [state.FFPROBE_EXECUTABLE_PATH, '-v', 'error', '-select_streams', 'v:0',
-                                '-show_entries', 'stream=duration,r_frame_rate,nb_frames', '-of', 'csv=p=0', filepath]
-                        _res = subprocess.run(_cmd, capture_output=True, text=True, timeout=3,
-                                              creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
-                        if _res.stdout.strip():
-                            _parts = _res.stdout.strip().split(',')
-                            if len(_parts) > 0 and _parts[0]:
-                                if '/' in _parts[0]:
-                                    _n, _d = _parts[0].split('/')
-                                    _fps = float(_n) / float(_d)
-                                else:
-                                    _fps = float(_parts[0])
-                            if len(_parts) > 1 and _parts[1]: _duration = float(_parts[1])
-                            if len(_parts) > 2 and _parts[2]: _total_frames = int(_parts[2])
-                        if _total_frames == 0 and _duration > 0 and _fps > 0:
-                            _total_frames = int(_duration * _fps)
-                    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, ValueError):
-                        pass
+                _fps, _duration, _total_frames = _probe_video_info(filepath, info.get('duration')) if info['type'] == 'video' else (0, 0, 0)
                 return jsonify({'status': 'success', 'cached': True, 'frames': urls,
                                 'totalVideoFrames': _total_frames, 'fps': round(_fps, 2), 'duration': round(_duration, 2)})
 
         os.makedirs(cache_subdir, exist_ok=True)
 
         # 3. Get Duration + FPS + Frame Count
-        duration = 0
-        fps = 0
-        total_video_frames = 0
-
         if info['type'] == 'video' and has_ffmpeg:
-            # Get duration, fps, and frame count in ONE call
-            try:
-                cmd_info = [
-                    state.FFPROBE_EXECUTABLE_PATH,
-                    '-v', 'error',
-                    '-select_streams', 'v:0',
-                    '-show_entries', 'stream=duration,r_frame_rate,nb_frames',
-                    '-of', 'csv=p=0',
-                    filepath
-                ]
-                res = subprocess.run(
-                    cmd_info,
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
-                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-                )
-                if res.stdout.strip():
-                    parts = res.stdout.strip().split(',')
+            fps, duration, total_video_frames = _probe_video_info(filepath, info.get('duration'))
+        else:
+            fps, duration, total_video_frames = 0, 0, 0
 
-                    if len(parts) > 0 and parts[0]:
-                        fps_str = parts[0]
-                        if '/' in fps_str:
-                            num, den = fps_str.split('/')
-                            fps = float(num) / float(den)
-                        else:
-                            fps = float(fps_str)
-
-                    if len(parts) > 1 and parts[1]:
-                        duration = float(parts[1])
-
-                    if len(parts) > 2 and parts[2]:
-                        total_video_frames = int(parts[2])
-
-            except Exception as e:
-                print(f"Info probe error: {e}")
-
-            # Fallback: Try DB duration
-            if duration <= 0 and info.get('duration'):
-                try:
-                    parts = info['duration'].split(':')
-                    parts.reverse()
-                    duration += float(parts[0])
-                    if len(parts) > 1: duration += int(parts[1]) * 60
-                    if len(parts) > 2: duration += int(parts[2]) * 3600
-                except (ValueError, IndexError):
-                    pass
-
-            # Fallback: Try format duration
-            if duration <= 0:
-                try:
-                    cmd_dur2 = [
-                        state.FFPROBE_EXECUTABLE_PATH,
-                        '-v', 'error',
-                        '-show_entries', 'format=duration',
-                        '-of', 'default=noprint_wrappers=1:nokey=1',
-                        filepath
-                    ]
-                    res2 = subprocess.run(
-                        cmd_dur2,
-                        capture_output=True,
-                        text=True,
-                        timeout=3,
-                        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-                    )
-                    if res2.stdout.strip():
-                        duration = float(res2.stdout.strip())
-                except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, ValueError):
-                    pass
-
-            # Calculate missing values
-            if total_video_frames == 0 and duration > 0 and fps > 0:
-                total_video_frames = int(duration * fps)
-            elif fps == 0 and duration > 0 and total_video_frames > 0:
-                fps = total_video_frames / duration
-
-        # Final fallback
+        # Final fallback for videos with no probe data
         if duration <= 0 and info['type'] == 'video':
             duration = 60
         if fps <= 0 and info['type'] == 'video':
@@ -335,16 +319,10 @@ def get_storyboard(file_id):
         if info['type'] == 'video' and has_ffmpeg and duration > 15:
             print(f"Quick test...")
 
-            ffmpeg_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
-            ffmpeg_bin = os.path.join(os.path.dirname(state.FFPROBE_EXECUTABLE_PATH), ffmpeg_name)
-            if not os.path.exists(ffmpeg_bin):
-                ffmpeg_bin = ffmpeg_name
-
+            ffmpeg_bin = _get_ffmpeg_path()
             test_path = os.path.join(cache_subdir, "test.jpg")
-            # Test at 50% - faster seek and still detects corruption
             test_timestamp = duration * 0.5
-
-            creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            creation_flags = _subprocess_flags()
 
             # Adaptive timeout based on duration
             test_timeout = min(20, max(8, int(duration / 100)))  # 8-20s range
@@ -395,11 +373,7 @@ def get_storyboard(file_id):
             print(f"Transcoding...")
 
             try:
-                ffmpeg_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
-                ffmpeg_bin = os.path.join(os.path.dirname(state.FFPROBE_EXECUTABLE_PATH), ffmpeg_name)
-                if not os.path.exists(ffmpeg_bin):
-                    ffmpeg_bin = ffmpeg_name
-
+                ffmpeg_bin = _get_ffmpeg_path()
                 temp_transcoded = os.path.join(cache_subdir, f"temp_proxy_{uuid.uuid4().hex}.mp4")
 
                 cmd_transcode = [
@@ -414,55 +388,18 @@ def get_storyboard(file_id):
                     temp_transcoded
                 ]
 
-                creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-
                 subprocess.run(
                     cmd_transcode,
                     capture_output=True,
                     text=True,
                     timeout=300,
-                    creationflags=creation_flags
+                    creationflags=_subprocess_flags()
                 )
 
                 if os.path.exists(temp_transcoded) and os.path.getsize(temp_transcoded) > 1000:
                     print(f"Transcoded")
                     source_for_extraction = temp_transcoded
-
-                    # Get corrected info
-                    try:
-                        cmd_info = [
-                            state.FFPROBE_EXECUTABLE_PATH,
-                            '-v', 'error',
-                            '-select_streams', 'v:0',
-                            '-show_entries', 'stream=duration,r_frame_rate,nb_frames',
-                            '-of', 'csv=p=0',
-                            temp_transcoded
-                        ]
-                        res = subprocess.run(
-                            cmd_info,
-                            capture_output=True,
-                            text=True,
-                            timeout=2,
-                            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-                        )
-                        if res.stdout.strip():
-                            parts = res.stdout.strip().split(',')
-
-                            if len(parts) > 0 and parts[0]:
-                                fps_str = parts[0]
-                                if '/' in fps_str:
-                                    num, den = fps_str.split('/')
-                                    fps = float(num) / float(den)
-                                else:
-                                    fps = float(fps_str)
-
-                            if len(parts) > 1 and parts[1]:
-                                duration = float(parts[1])
-
-                            if len(parts) > 2 and parts[2]:
-                                total_video_frames = int(parts[2])
-                    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, ValueError):
-                        pass
+                    fps, duration, total_video_frames = _probe_video_info(temp_transcoded)
 
             except Exception as e:
                 print(f"Transcode failed: {e}")
@@ -488,12 +425,8 @@ def get_storyboard(file_id):
                     if fps > 0:
                         actual_frame_number = int(timestamp * fps)
 
-                    ffmpeg_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
-                    ffmpeg_bin = os.path.join(os.path.dirname(state.FFPROBE_EXECUTABLE_PATH), ffmpeg_name)
-                    if not os.path.exists(ffmpeg_bin):
-                        ffmpeg_bin = ffmpeg_name
-
-                    creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                    ffmpeg_bin = _get_ffmpeg_path()
+                    creation_flags = _subprocess_flags()
 
                     # Fast extraction
                     cmd = [
@@ -694,36 +627,7 @@ def storyboard_hires(file_id, frame_index):
         filepath = info['path']
         mtime = info['mtime']
 
-        # Get duration (same logic as storyboard)
-        duration = 0
-        try:
-            cmd_info = [
-                state.FFPROBE_EXECUTABLE_PATH,
-                '-v', 'error',
-                '-select_streams', 'v:0',
-                '-show_entries', 'stream=duration,r_frame_rate,nb_frames',
-                '-of', 'csv=p=0',
-                filepath
-            ]
-            res = subprocess.run(cmd_info, capture_output=True, text=True, timeout=3,
-                                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
-            if res.stdout.strip():
-                parts = res.stdout.strip().split(',')
-                if len(parts) > 1 and parts[1]:
-                    duration = float(parts[1])
-        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, ValueError):
-            pass
-
-        if duration <= 0 and info.get('duration'):
-            try:
-                parts = info['duration'].split(':')
-                parts.reverse()
-                duration += float(parts[0])
-                if len(parts) > 1: duration += int(parts[1]) * 60
-                if len(parts) > 2: duration += int(parts[2]) * 3600
-            except (ValueError, IndexError):
-                pass
-
+        _, duration, _ = _probe_video_info(filepath, info.get('duration'))
         if duration <= 0:
             duration = 60
 
@@ -742,13 +646,8 @@ def storyboard_hires(file_id, frame_index):
         if os.path.exists(out_path) and os.path.getsize(out_path) > 100:
             return send_file(out_path, mimetype='image/jpeg')
 
-        ffmpeg_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
-        ffmpeg_bin = os.path.join(os.path.dirname(state.FFPROBE_EXECUTABLE_PATH), ffmpeg_name)
-        if not os.path.exists(ffmpeg_bin):
-            ffmpeg_bin = ffmpeg_name
-
         cmd = [
-            ffmpeg_bin, '-y',
+            _get_ffmpeg_path(), '-y',
             '-ss', f"{timestamp:.3f}",
             '-i', filepath,
             '-frames:v', '1',
@@ -760,7 +659,7 @@ def storyboard_hires(file_id, frame_index):
             cmd, check=True,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             timeout=10,
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            creationflags=_subprocess_flags()
         )
 
         if os.path.exists(out_path) and os.path.getsize(out_path) > 100:
@@ -776,8 +675,8 @@ def storyboard_hires(file_id, frame_index):
 def serve_input_file(filename):
     """Serves input files directly from the ComfyUI Input folder."""
     try:
-        # Prevent path traversal
-        filename = secure_filename(filename)
+        # Path traversal prevention via abspath containment check
+        # (secure_filename would mangle subdirectory paths from <path:> converter)
         filepath = os.path.abspath(os.path.join(BASE_INPUT_PATH, filename))
         if not filepath.startswith(os.path.abspath(BASE_INPUT_PATH)):
             abort(403)

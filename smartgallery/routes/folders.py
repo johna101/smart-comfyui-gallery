@@ -23,6 +23,48 @@ from smartgallery.queries import (
 folders_bp = Blueprint('folders_routes', __name__, url_prefix='/galleryout')
 
 
+def _rebase_file_records(conn, old_path, new_path):
+    """Rewrite file DB records and AI watch paths when a folder is renamed or moved.
+
+    Computes new file paths by replacing the old_path prefix with new_path,
+    generates new content-addressed IDs, cleans ghost collisions, and
+    updates the ai_watched_folders table.
+    """
+    all_files = conn.execute(FILES_SELECT_ID_PATH_ALL).fetchall()
+
+    update_data = []
+    collision_ids = []
+    is_windows = (os.name == 'nt')
+    check_old = old_path.lower() if is_windows else old_path
+
+    for row in all_files:
+        current_path = row['path']
+        check_curr = current_path.lower() if is_windows else current_path
+
+        if check_curr.startswith(check_old):
+            suffix = current_path[len(old_path):]
+            new_file_path = new_path + suffix
+            new_id = hashlib.md5(new_file_path.encode()).hexdigest()
+            update_data.append((new_id, new_file_path, row['id']))
+            collision_ids.append(new_id)
+
+    if collision_ids:
+        placeholders = ','.join(['?'] * len(collision_ids))
+        conn.execute(FILES_DELETE_BY_ID_BATCH.format(placeholders=placeholders), collision_ids)
+
+    if update_data:
+        conn.executemany("UPDATE files SET id = ?, path = ? WHERE id = ?", update_data)
+
+    # Update AI watch list
+    watched = conn.execute(AI_WATCHED_SELECT_PATHS).fetchall()
+    for row in watched:
+        w_path = row['path']
+        w_check = w_path.lower() if is_windows else w_path
+        if w_check == check_old or w_check.startswith(check_old):
+            w_suffix = w_path[len(old_path):]
+            conn.execute(AI_WATCHED_UPDATE_PATH, (new_path + w_suffix, w_path))
+
+
 @folders_bp.route('/create_folder', methods=['POST'])
 def create_folder():
     data = request.json
@@ -248,15 +290,9 @@ def browse_filesystem():
         response_data['folders'] = items
         response_data['current_path'] = current_path
 
-        # Calculate "Up" button (Parent)
+        # Calculate "Up" button (Parent) — at filesystem root, dirname == path
         parent = os.path.dirname(current_path)
-        if parent == current_path:
-            if os.name == 'nt':
-                parent = ''
-            else:
-                parent = ''
-
-        response_data['parent_path'] = parent
+        response_data['parent_path'] = '' if parent == current_path else parent
 
     except Exception as e:
         response_data['error'] = f"Error accessing folder: {str(e)}"
@@ -277,74 +313,16 @@ def rename_folder(folder_key):
     folders = get_dynamic_folder_config()
     if folder_key not in folders: return jsonify({'status': 'error', 'message': 'Folder not found.'}), 400
 
-    # 1. GET EXACT FOLDER PATH FROM CONFIG
     old_folder_path = folders[folder_key]['path']
+    new_folder_path = os.path.join(os.path.dirname(old_folder_path), new_name)
 
-    # 2. CONSTRUCT NEW FOLDER PATH
-    if '/' in old_folder_path:
-        parent_dir = old_folder_path.rsplit('/', 1)[0]
-        new_folder_path = f"{parent_dir}/{new_name}"
-    else:
-        parent_dir = os.path.dirname(old_folder_path)
-        new_folder_path = os.path.join(parent_dir, new_name)
-
-    # Check existence
     if os.path.exists(os.path.normpath(new_folder_path)):
         return jsonify({'status': 'error', 'message': 'A folder with this name already exists.'}), 400
 
     try:
         with get_db_connection() as conn:
-            all_files_cursor = conn.execute(FILES_SELECT_ID_PATH_ALL)
-
-            update_data = []
-            ids_to_clean_collisions = []
-
-            # Prepare check
-            is_windows = (os.name == 'nt')
-            check_old = old_folder_path.lower() if is_windows else old_folder_path
-
-            for row in all_files_cursor:
-                current_path = row['path']
-                check_curr = current_path.lower() if is_windows else current_path
-
-                # Check containment
-                if check_curr.startswith(check_old):
-                    filename = os.path.basename(current_path)
-                    new_file_path = os.path.join(new_folder_path, filename)
-                    new_id = hashlib.md5(new_file_path.encode()).hexdigest()
-
-                    update_data.append((new_id, new_file_path, row['id']))
-                    ids_to_clean_collisions.append(new_id)
-
-            # Cleanup Ghost records
-            if ids_to_clean_collisions:
-                placeholders = ','.join(['?'] * len(ids_to_clean_collisions))
-                conn.execute(FILES_DELETE_BY_ID_BATCH.format(placeholders=placeholders), ids_to_clean_collisions)
-
-            # Physical Rename
+            _rebase_file_records(conn, old_folder_path, new_folder_path)
             os.rename(os.path.normpath(old_folder_path), os.path.normpath(new_folder_path))
-
-            # Atomic DB Update
-            if update_data:
-                conn.executemany("UPDATE files SET id = ?, path = ? WHERE id = ?", update_data)
-
-            # Update Watch List
-            watched_folders = conn.execute(AI_WATCHED_SELECT_PATHS).fetchall()
-            for row in watched_folders:
-                w_path = row['path']
-                w_check = w_path.lower() if is_windows else w_path
-
-                if w_check == check_old:
-                    conn.execute(AI_WATCHED_UPDATE_PATH, (new_folder_path, w_path))
-                elif w_check.startswith(check_old):
-                    if is_windows:
-                        suffix = w_path[len(old_folder_path):]
-                        new_w_path = new_folder_path + suffix
-                        conn.execute(AI_WATCHED_UPDATE_PATH, (new_w_path, w_path))
-                    else:
-                        new_w_path = w_path.replace(old_folder_path, new_folder_path, 1)
-                        conn.execute(AI_WATCHED_UPDATE_PATH, (new_w_path, w_path))
-
             conn.commit()
 
         get_dynamic_folder_config(force_refresh=True)
@@ -382,57 +360,15 @@ def move_folder(folder_key):
     if dest_norm == old_norm or dest_norm.startswith(old_norm + '/'):
         return jsonify({'status': 'error', 'message': 'Cannot move a folder into itself.'}), 400
 
-    # Construct new path
-    new_folder_path = f"{dest_path}/{folder_name}" if '/' in dest_path else os.path.join(dest_path, folder_name)
+    new_folder_path = os.path.join(dest_path, folder_name)
 
     if os.path.exists(os.path.normpath(new_folder_path)):
         return jsonify({'status': 'error', 'message': f'A folder named "{folder_name}" already exists in the destination.'}), 400
 
     try:
         with get_db_connection() as conn:
-            all_files_cursor = conn.execute(FILES_SELECT_ID_PATH_ALL)
-
-            update_data = []
-            ids_to_clean_collisions = []
-
-            is_windows = (os.name == 'nt')
-            check_old = old_folder_path.lower() if is_windows else old_folder_path
-
-            for row in all_files_cursor:
-                current_path = row['path']
-                check_curr = current_path.lower() if is_windows else current_path
-
-                if check_curr.startswith(check_old):
-                    suffix = current_path[len(old_folder_path):]
-                    new_file_path = new_folder_path + suffix
-
-                    new_id = hashlib.md5(new_file_path.encode()).hexdigest()
-                    update_data.append((new_id, new_file_path, row['id']))
-                    ids_to_clean_collisions.append(new_id)
-
-            # Cleanup ghost records
-            if ids_to_clean_collisions:
-                placeholders = ','.join(['?'] * len(ids_to_clean_collisions))
-                conn.execute(FILES_DELETE_BY_ID_BATCH.format(placeholders=placeholders), ids_to_clean_collisions)
-
-            # Physical move
+            _rebase_file_records(conn, old_folder_path, new_folder_path)
             shutil.move(os.path.normpath(old_folder_path), os.path.normpath(new_folder_path))
-
-            # DB update
-            if update_data:
-                conn.executemany("UPDATE files SET id = ?, path = ? WHERE id = ?", update_data)
-
-            # Update watch list
-            watched_folders = conn.execute(AI_WATCHED_SELECT_PATHS).fetchall()
-            for row in watched_folders:
-                w_path = row['path']
-                w_check = w_path.lower() if is_windows else w_path
-
-                if w_check == check_old or w_check.startswith(check_old):
-                    suffix = w_path[len(old_folder_path):]
-                    new_w_path = new_folder_path + suffix
-                    conn.execute(AI_WATCHED_UPDATE_PATH, (new_w_path, w_path))
-
             conn.commit()
 
         get_dynamic_folder_config(force_refresh=True)

@@ -5,7 +5,6 @@ import os
 import re
 import json
 import colorsys
-from typing import Dict, Any
 
 from smartgallery.config import (
     BASE_OUTPUT_PATH, BASE_INPUT_PATH, NODE_CATEGORIES, NODE_CATEGORIES_ORDER, NODE_PARAM_NAMES,
@@ -207,7 +206,7 @@ RE_PARENS = re.compile(r"[\\/\[\](){}]+")
 RE_LORA_CLOSE = re.compile(r">\s+")
 
 
-def clean_prompt_text(x: str) -> Dict[str, Any]:
+def clean_prompt_text(x):
     """
     Cleans a raw prompt string: removes LoRA tags, normalizes whitespace,
     and extracts LoRA usage into a separate list.

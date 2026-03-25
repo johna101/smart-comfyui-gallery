@@ -1,6 +1,7 @@
 # Smart Gallery for ComfyUI - Startup Functions
 # Banner, update check, configuration validation, and initialization.
 
+import json
 import os
 import sys
 import re
@@ -155,7 +156,6 @@ def run_app():
 
     # --- CHECK: FIRST-RUN / NO CONFIG ---
     if not BASE_OUTPUT_PATH:
-        import json as _json
         if not os.path.exists(_settings_path):
             template = {
                 "comfyui_output_path": "/path/to/comfyui/output",
@@ -169,7 +169,7 @@ def run_app():
             }
             try:
                 with open(_settings_path, 'w') as f:
-                    _json.dump(template, f, indent=2)
+                    json.dump(template, f, indent=2)
                     f.write('\n')
                 print(f"\n{Colors.YELLOW}{Colors.BOLD}First run — created settings.json with placeholders:{Colors.RESET}")
                 print(f"  {Colors.CYAN}{_settings_path}{Colors.RESET}\n")
