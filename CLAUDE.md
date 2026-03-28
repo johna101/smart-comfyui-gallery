@@ -18,7 +18,9 @@ Forked for personal use and active refactoring. Not intended for upstream contri
 ### Backend Package (`smartgallery/`)
 - `__init__.py` — Flask app factory, registers all blueprints, production asset loader
 - `config.py` — all constants, paths, environment variable handling
-- `state.py` — mutable runtime state (caches, job trackers, globals)
+- `state.py` — mutable runtime state (caches, job trackers, scan/operation flags, watcher refs)
+- `watcher.py` — watchdog filesystem observer for real-time external change detection
+- `events.py` — EventBus (thread-safe pub/sub), GalleryEvent, SSE push + DB persistence
 - `models.py` — database access, `get_db_connection()`, `init_db()` with migrations, thread-local connections
 - `parser.py` — `ComfyMetadataParser` class, workflow/prompt JSON extraction
 - `processing.py` — file scanning, thumbnail generation, parallel processing pipeline
@@ -31,7 +33,7 @@ Forked for personal use and active refactoring. Not intended for upstream contri
   - `folders.py` — folder CRUD (create, mount, rename, delete, move, browse)
   - `media.py` — serve files, thumbnails, storyboards (incl. hi-res), video streaming with range requests
   - `ai.py` — AI search queue, indexing control (skips macOS `._*` resource forks)
-  - `api.py` — search options, compare, sync status
+  - `api.py` — search options, compare, sync status, scan status, SSE event stream
   - `batch.py` — rescan, zip preparation/download
 
 ### Frontend (`frontend/`)
@@ -49,8 +51,8 @@ Forked for personal use and active refactoring. Not intended for upstream contri
   - `toolbar/` — GalleryToolbar, FilterPanel, RescanProgress
   - `compare/` — ImageCompare (side-by-side + slider wipe mode, metadata diff)
   - `storyboard/` — StoryboardViewer (grid + zoom with HD toggle, keyboard nav, PNG download)
-  - `ui/` — FolderPickerDialog (reusable, isolated expand state)
-- **Composables:** useFolderNavigation, useLightboxZoom, useLightboxKeys, useSelection, useThumbnailCache
+  - `ui/` — FolderPickerDialog (reusable, isolated expand state), ScanOverlay (progress bar during scans)
+- **Composables:** useFolderNavigation, useLightboxZoom, useLightboxKeys, useSelection, useThumbnailCache, useEventStream (SSE + scan progress)
 - **Tailwind v4:** scoped `<style>` blocks need `@reference "tailwindcss"` for `@apply` to work
 
 ### Performance Architecture
@@ -59,6 +61,40 @@ Forked for personal use and active refactoring. Not intended for upstream contri
 - **SQL optimization:** Path filtering in SQL WHERE (not Python), explicit column lists (no ai_embedding BLOB), indexed columns
 - **Thumbnail caching:** HTTP Cache-Control immutable, in-memory path cache, thread-local DB connections
 - **Payload optimization:** `skip_folders` param omits 500KB folders map on repeat navigations, folder config cached between mutations
+
+### File Change Detection & Folder Operations
+Three layers detect and propagate file/folder changes:
+
+| Source | Detects | Updates DB | Notifies frontend |
+|---|---|---|---|
+| **Route handlers** (move/rename/delete) | User action | `_rebase_file_records` or direct SQL | `publish_event` → SSE |
+| **Watcher** (watchdog/FSEvents) | External changes (ComfyUI output, manual copies) | `process_single_file` + upsert | `publish_event` → SSE |
+| **Startup scan** (`full_sync_database`) | Boot-time reconciliation | Chunked `executemany` via `ProcessPoolExecutor` | `scan_progress` → SSE overlay |
+
+**Startup flow** (`startup.py`):
+1. `initialize_db()` — fast DB migrations (blocking, before Flask starts)
+2. `create_app()` — Flask starts serving immediately with stale DB
+3. Background thread: `run_startup_scan()` → `full_sync_database()` with SSE progress
+4. Frontend shows `ScanOverlay` until scan completes
+
+**Folder operation coordination** (`routes/folders.py`):
+- `_begin_folder_operation()` — stops watcher (observer.stop), cancels pending timers, sets `state.folder_operation_in_progress` flag
+- Filesystem op runs first (shutil.move/os.rename) — if it fails, nothing to roll back
+- DB paths rewritten via `_rebase_file_records` — if DB fails, next scan reconciles
+- `_end_folder_operation()` — restarts watcher immediately, clears flag after 3s timer (absorbs macOS FSEvents replay buffer)
+- Startup scan yields to folder ops (pauses DB writes while flag is set)
+
+**Watcher suppression** (`watcher.py`):
+- All event handlers check `_suppressed()` (reads `state.folder_operation_in_progress`)
+- Debounced callbacks re-check flag at fire time via guarded wrapper
+- `cancel_all_timers()` kills pending callbacks when an operation starts
+- Restart timer is cancellable — rapid operations don't race
+
+**Critical: Flask debug mode** (`FLASK_DEBUG=true`):
+- Werkzeug reloader spawns a child process — both parent and child run `run_app()`
+- Background threads (watcher, scan, AI watcher) must only start in the child process
+- Check `os.environ.get('WERKZEUG_RUN_MAIN')` — only truthy in the child
+- Without this, `state` flags set in child are invisible to parent's watcher (separate memory)
 
 ## Dev Setup
 ```bash
@@ -190,9 +226,15 @@ No automated test suite. Changes verified manually by running the app against re
 - macOS resource fork filtering: `._*` files skipped during scanning
 - Video streaming: range request support for large files
 - Debug mode: `FLASK_DEBUG=true` enables Flask auto-reload + Vite dev injection
+- Background startup scan with ScanOverlay progress bar (Flask serves immediately)
+- Folder move/rename: watcher stop/restart cycle prevents FSEvents CPU storm
+- Folder collapse: `ancestorKeys` excludes current folder, one-click collapse works
+- Context menu viewport clamping (no more clipping at bottom of screen)
+- API error messages include server response body (not just HTTP status)
+- Chunked scan: DB writes interleaved with file processing, not batched at end
+- Scan executor uses incremental job submission (pausable during folder ops)
 
 ## Known Issues
-- Sidebar: collapsing parent when child is selected doesn't always collapse visually
 - Sidebar: initial scroll-to-active-folder unreliable on first load for deep folders
 - Workflow keyword search uses `LIKE '%keyword%'` which forces full table scan at 49K+ files — FTS5 virtual table is the correct future solution
 
