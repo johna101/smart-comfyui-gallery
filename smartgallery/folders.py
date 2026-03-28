@@ -5,6 +5,7 @@ import os
 import json
 import time
 import sqlite3
+import itertools
 import threading
 import concurrent.futures
 
@@ -22,6 +23,7 @@ from smartgallery.models import get_db_connection, init_db
 from smartgallery.processing import process_single_file, find_ffprobe_path
 from smartgallery.utils import get_standardized_path
 from smartgallery import state
+from smartgallery.events import event_bus, GalleryEvent
 from smartgallery.queries import (
     FILES_UPSERT, FILES_SELECT_PATH_MTIME_ALL, FILES_DELETE_BY_PATH,
     FILES_SELECT_PATH_MTIME_FOLDER, FILES_COUNT,
@@ -245,8 +247,17 @@ def background_watcher_task():
 
         time.sleep(10) # Faster check cycle (10s instead of 60s) to feel responsive
 
+def _publish_scan_progress(processed, total, phase='processing'):
+    """Push lightweight progress event to SSE clients (no DB persistence)."""
+    event_bus.publish(GalleryEvent('scan_progress', {
+        'processed': processed, 'total': total, 'phase': phase
+    }, source='system'))
+
+
 def full_sync_database(conn):
     print("INFO: Starting full file scan...")
+    state.scan_in_progress = True
+    _publish_scan_progress(0, 0, phase='started')
     start_time = time.time()
 
     all_folders = get_dynamic_folder_config(force_refresh=True)
@@ -291,30 +302,61 @@ def full_sync_database(conn):
     files_to_process = list(to_add.union(to_update))
     # debug if files_to_process: print(f"{Colors.YELLOW}DEBUG - File to process: {files_to_process}{Colors.RESET}")
     if files_to_process:
-        print(f"INFO: Processing {len(files_to_process)} files in parallel using up to {MAX_PARALLEL_WORKERS or 'all'} CPU cores...")
+        total = len(files_to_process)
+        num_workers = MAX_PARALLEL_WORKERS or os.cpu_count() or 4
+        print(f"INFO: Processing {total} files in parallel using up to {num_workers} CPU cores...")
 
-        results = []
-        # --- CORRECT BLOCK FOR PROGRESS BAR ---
-        with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_PARALLEL_WORKERS) as executor:
-            # Submit all jobs to the pool and get future objects
-            futures = {executor.submit(process_single_file, path): path for path in files_to_process}
+        chunk = []
+        inserted = 0
 
-            # Create the progress bar with the correct total
-            with tqdm(total=len(files_to_process), desc="Processing files") as pbar:
-                # Iterate over the jobs as they are COMPLETED
-                for future in concurrent.futures.as_completed(futures):
-                    result = future.result()
-                    if result:
-                        results.append(result)
-                    # Update the bar by 1 step for each completed job
-                    pbar.update(1)
+        with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
+            pending = set()
+            file_iter = iter(files_to_process)
+            done_count = 0
 
-        if results:
-            print(f"INFO: Inserting {len(results)} processed records into the database...")
-            for i in range(0, len(results), BATCH_SIZE):
-                batch = results[i:i + BATCH_SIZE]
-                conn.executemany(FILES_UPSERT, batch)
-                conn.commit()
+            # Seed the executor with a limited number of initial jobs
+            for path in itertools.islice(file_iter, num_workers * 2):
+                pending.add(executor.submit(process_single_file, path))
+
+            with tqdm(total=total, desc="Processing files") as pbar:
+                while pending:
+                    # Wait for at least one future to complete
+                    done, pending = concurrent.futures.wait(
+                        pending, return_when=concurrent.futures.FIRST_COMPLETED
+                    )
+
+                    for future in done:
+                        result = future.result()
+                        if result:
+                            chunk.append(result)
+                        done_count += 1
+                        pbar.update(1)
+
+                    # Flush chunk to DB when ready
+                    if len(chunk) >= BATCH_SIZE:
+                        while state.folder_operation_in_progress:
+                            time.sleep(0.5)
+                        conn.executemany(FILES_UPSERT, chunk)
+                        conn.commit()
+                        inserted += len(chunk)
+                        chunk = []
+                        _publish_scan_progress(inserted, total)
+
+                    # Submit more work — but pause if a folder operation is active
+                    if not state.folder_operation_in_progress:
+                        for path in itertools.islice(file_iter, len(done)):
+                            pending.add(executor.submit(process_single_file, path))
+
+        # Flush remaining partial chunk
+        if chunk:
+            while state.folder_operation_in_progress:
+                time.sleep(0.5)
+            conn.executemany(FILES_UPSERT, chunk)
+            conn.commit()
+            inserted += len(chunk)
+
+        if inserted:
+            print(f"INFO: Inserted {inserted} processed records into the database.")
 
     # SAFETY GUARD FOR DISCONNECTED DRIVES
     if to_delete:
@@ -356,6 +398,8 @@ def full_sync_database(conn):
 
         # 3. Proceed with safe deletion
         if safe_to_delete:
+            while state.folder_operation_in_progress:
+                time.sleep(0.5)
             print(f"INFO: Removing {len(safe_to_delete)} obsolete file entries from the database...")
 
             paths_to_remove = [(p,) for p in safe_to_delete]
@@ -367,7 +411,10 @@ def full_sync_database(conn):
 
             conn.commit()
 
-    print(f"INFO: Full scan completed in {time.time() - start_time:.2f} seconds.")
+    state.scan_in_progress = False
+    elapsed = time.time() - start_time
+    print(f"INFO: Full scan completed in {elapsed:.2f} seconds.")
+    _publish_scan_progress(0, 0, phase='complete')
 
 def sync_folder_on_demand(folder_path):
     yield f"data: {json.dumps({'message': 'Checking folder for changes...', 'current': 0, 'total': 1})}\n\n"
@@ -496,8 +543,9 @@ def cleanup_invalid_watched_folders(conn):
     except Exception as e:
         print(f"ERROR checking watched folders: {e}")
 
-def initialize_gallery():
-    print("INFO: Initializing gallery...")
+def initialize_db():
+    """Phase 1: Fast DB setup — migrations, pruning, dirs. Must complete before Flask starts."""
+    print("INFO: Initializing database...")
     state.FFPROBE_EXECUTABLE_PATH = find_ffprobe_path()
     os.makedirs(THUMBNAIL_CACHE_DIR, exist_ok=True)
     os.makedirs(SQLITE_CACHE_DIR, exist_ok=True)
@@ -505,18 +553,22 @@ def initialize_gallery():
     with get_db_connection() as conn:
         try:
             init_db(conn)
-            # Prune old event log entries (keep 7 days)
             conn.execute(EVENT_LOG_PRUNE, (time.time() - 604800,))
             conn.commit()
-            # Cleanup invalid watched folders before full sync
-            if ENABLE_AI_SEARCH:
-                cleanup_invalid_watched_folders(conn)
-            # Force full sync on every startup to clean external deletions
-            print(f"{Colors.BLUE}INFO: Performing startup consistency check...{Colors.RESET}")
-            full_sync_database(conn)
-
         except sqlite3.DatabaseError as e:
             print(f"ERROR initializing database: {e}")
+
+
+def run_startup_scan():
+    """Phase 2: Full file scan — runs in background thread after Flask starts."""
+    with get_db_connection() as conn:
+        try:
+            if ENABLE_AI_SEARCH:
+                cleanup_invalid_watched_folders(conn)
+            print(f"{Colors.BLUE}INFO: Performing startup consistency check...{Colors.RESET}")
+            full_sync_database(conn)
+        except sqlite3.DatabaseError as e:
+            print(f"ERROR during startup scan: {e}")
 
 
 def get_filter_options_from_db(conn, scope, folder_path=None, recursive=False):

@@ -37,12 +37,17 @@ async function handlePick(destinationKey: string) {
   moving.value = true
   try {
     await folderApi.moveFolder(props.folderKey, destinationKey)
-    // Refresh folder data
-    await gallery.loadFolder(gallery.currentFolderKey)
+    // Navigate to destination folder with fresh folder tree
+    await gallery.loadFolder(destinationKey, { force_refresh: 'true' })
     emit('close')
-  } catch (e) {
-    console.log('Move folder failed:', e)
-    alert('Move failed! The folder may not be movable to that location.')
+    emit('navigate', destinationKey)
+  } catch (e: any) {
+    const msg = e?.message || 'Unknown error'
+    console.error('Move folder failed:', msg)
+    alert(`Move failed: ${msg}`)
+    // Refresh anyway — filesystem move may have succeeded even if DB update didn't
+    await gallery.loadFolder(destinationKey || gallery.currentFolderKey, { force_refresh: 'true' })
+    emit('close')
   } finally {
     moving.value = false
   }

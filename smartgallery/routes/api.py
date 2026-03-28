@@ -14,8 +14,15 @@ from smartgallery.folders import (
 )
 from smartgallery.routes.files import get_file_info_from_db
 from smartgallery.events import event_bus
+from smartgallery import state
 
 api_bp = Blueprint('api', __name__, url_prefix='/galleryout')
+
+
+@api_bp.route('/api/scan_status')
+def scan_status():
+    """Returns current scan state so the frontend can show overlay on page load."""
+    return jsonify({'scanning': state.scan_in_progress})
 
 
 @api_bp.route('/sync_status/<string:folder_key>')

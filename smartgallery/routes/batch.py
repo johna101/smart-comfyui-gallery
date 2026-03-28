@@ -9,11 +9,11 @@ import threading
 import concurrent.futures
 from flask import Blueprint, request, jsonify, url_for, send_from_directory
 
-from smartgallery.config import MAX_PARALLEL_WORKERS, ZIP_CACHE_DIR
+from smartgallery.config import MAX_PARALLEL_WORKERS, ZIP_CACHE_DIR, BATCH_SIZE
 from smartgallery import state
 from smartgallery.models import get_db_connection
 from smartgallery.processing import process_single_file
-from smartgallery.folders import get_dynamic_folder_config
+from smartgallery.folders import get_dynamic_folder_config, _publish_scan_progress
 from smartgallery.events import publish_event
 from smartgallery.queries import FILES_UPSERT, FILES_SELECT_PATH_NAME_BATCH, FILES_SELECT_PATH_LASTSCAN_FOLDER
 
@@ -23,20 +23,24 @@ batch_bp = Blueprint('batch', __name__, url_prefix='/galleryout')
 def background_rescan_worker(job_id, files_to_process):
     """
     Background worker that updates a global job status so the UI can poll for progress.
+    Also publishes scan_progress SSE events so the overlay shows progress.
     """
     if not files_to_process:
         state.rescan_jobs[job_id]['status'] = 'done'
         return
 
-    print(f"INFO: [Background] Job {job_id}: Rescanning {len(files_to_process)} files...")
+    total = len(files_to_process)
+    print(f"INFO: [Background] Job {job_id}: Rescanning {total} files...")
+    state.scan_in_progress = True
+    _publish_scan_progress(0, total, phase='started')
 
     try:
-        total = len(files_to_process)
         state.rescan_jobs[job_id]['total'] = total
 
         with get_db_connection() as conn:
             processed_count = 0
-            results = []
+            chunk = []
+            inserted = 0
 
             with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_PARALLEL_WORKERS) as executor:
                 futures = {executor.submit(process_single_file, path): path for path in files_to_process}
@@ -45,17 +49,25 @@ def background_rescan_worker(job_id, files_to_process):
                     try:
                         result = future.result()
                         if result:
-                            results.append(result)
+                            chunk.append(result)
 
                         processed_count += 1
-                        # UPDATE PROGRESS
                         state.rescan_jobs[job_id]['current'] = processed_count
+
+                        # Flush chunk to DB periodically
+                        if len(chunk) >= BATCH_SIZE:
+                            conn.executemany(FILES_UPSERT, chunk)
+                            conn.commit()
+                            inserted += len(chunk)
+                            chunk = []
+                            _publish_scan_progress(inserted, total)
 
                     except Exception as e:
                         print(f"ERROR: Worker failed for a file: {e}")
 
-            if results:
-                conn.executemany(FILES_UPSERT, results)
+            # Flush remaining
+            if chunk:
+                conn.executemany(FILES_UPSERT, chunk)
                 conn.commit()
 
         print(f"INFO: [Background] Job {job_id} finished.")
@@ -69,6 +81,9 @@ def background_rescan_worker(job_id, files_to_process):
         print(f"CRITICAL ERROR in Background Rescan: {e}")
         state.rescan_jobs[job_id]['status'] = 'error'
         state.rescan_jobs[job_id]['error'] = str(e)
+    finally:
+        state.scan_in_progress = False
+        _publish_scan_progress(0, 0, phase='complete')
 
 
 def background_zip_task(job_id, file_ids):

@@ -17,6 +17,7 @@ from smartgallery.config import (
 from smartgallery.models import get_db_connection
 from smartgallery.processing import process_single_file
 from smartgallery.events import publish_event
+from smartgallery import state
 from smartgallery.utils import folder_key_from_filepath
 from smartgallery.queries import FILES_UPSERT, FILES_EXISTS_BY_ID, FILES_DELETE_BY_ID
 
@@ -98,16 +99,33 @@ class SmartGalleryHandler(FileSystemEventHandler):
             if timer:
                 timer.cancel()
 
+    def cancel_all_timers(self):
+        """Cancel all pending debounced callbacks. Called when a folder operation starts."""
+        with self._lock:
+            for timer in self._timers.values():
+                timer.cancel()
+            self._timers.clear()
+
     def _debounce(self, path, callback, delay=1.0):
-        """Schedule a callback after `delay` seconds, resetting on repeated events."""
+        """Schedule a callback after `delay` seconds, resetting on repeated events.
+        Re-checks suppression flag at fire time to handle events queued before a folder op started."""
         self._cancel_timer(path)
-        timer = threading.Timer(delay, callback)
+        def guarded():
+            if not self._suppressed():
+                callback()
+        timer = threading.Timer(delay, guarded)
         timer.daemon = True
         with self._lock:
             self._timers[path] = timer
         timer.start()
 
+    def _suppressed(self):
+        """Check if events should be suppressed during folder operations."""
+        return state.folder_operation_in_progress
+
     def on_created(self, event):
+        if self._suppressed():
+            return
         if event.is_directory:
             # New folder — refresh folder tree
             if not _should_ignore(event.src_path):
@@ -119,6 +137,8 @@ class SmartGalleryHandler(FileSystemEventHandler):
         self._debounce(path, lambda p=path: self._handle_file_created(p))
 
     def on_deleted(self, event):
+        if self._suppressed():
+            return
         if event.is_directory:
             if not _should_ignore(event.src_path):
                 self._debounce(event.src_path + ':dir_del', lambda: self._handle_folder_changed())
@@ -127,9 +147,12 @@ class SmartGalleryHandler(FileSystemEventHandler):
         if _should_ignore(path) or not _is_valid_media(path):
             return
         self._cancel_timer(path)  # No point processing a deleted file
-        self._handle_file_deleted(path)
+        if not self._suppressed():
+            self._handle_file_deleted(path)
 
     def on_moved(self, event):
+        if self._suppressed():
+            return
         if event.is_directory:
             if not _should_ignore(event.dest_path):
                 self._debounce(event.dest_path + ':dir_mv', lambda: self._handle_folder_changed())
@@ -147,6 +170,8 @@ class SmartGalleryHandler(FileSystemEventHandler):
         self._debounce(dest, lambda: self._handle_file_moved(src, dest))
 
     def on_modified(self, event):
+        if self._suppressed():
+            return
         if event.is_directory:
             return
         path = event.src_path
@@ -233,6 +258,8 @@ def start_watcher():
 
     observer = Observer()
     handler = SmartGalleryHandler()
+    state.watcher_handler = handler
+    state.watcher_observer = observer
     observer.schedule(handler, BASE_OUTPUT_PATH, recursive=True)
     observer.daemon = True
     observer.start()

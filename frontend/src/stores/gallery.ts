@@ -257,7 +257,7 @@ export const useGalleryStore = defineStore('gallery', () => {
     // Update key + ancestors immediately so sidebar can collapse before API returns
     currentFolderKey.value = folderKey
     const newAncestors: string[] = []
-    let curr: string | null = folderKey
+    let curr: string | null = folders.value[folderKey]?.parent ?? null
     while (curr && folders.value[curr]) {
       newAncestors.push(curr)
       curr = folders.value[curr].parent ?? null

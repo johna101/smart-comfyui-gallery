@@ -7,7 +7,15 @@ const BASE = '/galleryout'
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, options)
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  if (!res.ok) {
+    // Try to extract the server's error message from the JSON body
+    let msg = `${res.status} ${res.statusText}`
+    try {
+      const body = await res.json()
+      if (body?.message) msg = body.message
+    } catch { /* body not JSON, use status text */ }
+    throw new Error(msg)
+  }
   return res.json()
 }
 

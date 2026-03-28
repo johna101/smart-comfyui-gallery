@@ -147,7 +147,7 @@ def show_ffmpeg_warning():
 def run_app():
     """Main entry point - startup checks and run the Flask server."""
     from smartgallery.config import print_configuration
-    from smartgallery.folders import initialize_gallery, background_watcher_task
+    from smartgallery.folders import initialize_db, run_startup_scan, background_watcher_task
     from smartgallery import create_app
 
     print_startup_banner()
@@ -197,8 +197,8 @@ def run_app():
         print(f"{Colors.YELLOW}   > Source media visualization in Node Summary will be DISABLED.{Colors.RESET}")
         print(f"{Colors.YELLOW}   > The gallery will still function normally for output files.{Colors.RESET}\n")
 
-    # Initialize the gallery (Creates DB, Migrations, etc.)
-    initialize_gallery()
+    # Phase 1: Fast DB init (migrations, dirs) — must complete before Flask starts
+    initialize_db()
 
     # --- CHECK: FFMPEG WARNING ---
     if not state.FFPROBE_EXECUTABLE_PATH:
@@ -210,32 +210,40 @@ def run_app():
         else:
             print(f"{Colors.RED}WARNING: FFmpeg not found. Video workflows extraction disabled.{Colors.RESET}")
 
-    # --- START BACKGROUND WATCHERS ---
-    if ENABLE_AI_SEARCH:
-        try:
-            watcher = threading.Thread(target=background_watcher_task, daemon=True)
-            watcher.start()
-            print(f"{Colors.BLUE}INFO: AI Background Watcher started.{Colors.RESET}")
-        except Exception as e:
-            print(f"{Colors.RED}ERROR: Failed to start AI Watcher: {e}{Colors.RESET}")
-
-    # Start filesystem watcher for real-time change detection
-    try:
-        from smartgallery.watcher import start_watcher
-        fs_observer = start_watcher()
-        if fs_observer:
-            print(f"{Colors.BLUE}INFO: File watcher started on {BASE_OUTPUT_PATH}{Colors.RESET}")
-    except Exception as e:
-        print(f"{Colors.YELLOW}WARNING: File watcher not available: {e}{Colors.RESET}")
-
-    # Create and run the Flask app
+    # Create the Flask app first
     app = create_app()
+    debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
+
+    # Only start background threads in the actual server process, not the reloader parent.
+    # Flask debug mode spawns a child process — werkzeug sets WERKZEUG_RUN_MAIN in the child.
+    # Without this check, we get duplicate watchers/scans in separate processes.
+    is_reloader_parent = debug_mode and not os.environ.get('WERKZEUG_RUN_MAIN')
+
+    if not is_reloader_parent:
+        if ENABLE_AI_SEARCH:
+            try:
+                watcher = threading.Thread(target=background_watcher_task, daemon=True)
+                watcher.start()
+                print(f"{Colors.BLUE}INFO: AI Background Watcher started.{Colors.RESET}")
+            except Exception as e:
+                print(f"{Colors.RED}ERROR: Failed to start AI Watcher: {e}{Colors.RESET}")
+
+        # Start filesystem watcher for real-time change detection
+        try:
+            from smartgallery.watcher import start_watcher
+            fs_observer = start_watcher()
+            if fs_observer:
+                print(f"{Colors.BLUE}INFO: File watcher started on {BASE_OUTPUT_PATH}{Colors.RESET}")
+        except Exception as e:
+            print(f"{Colors.YELLOW}WARNING: File watcher not available: {e}{Colors.RESET}")
+
+        # Phase 2: Full file scan in background thread (Flask serves immediately with stale DB)
+        scan_thread = threading.Thread(target=run_startup_scan, daemon=True)
+        scan_thread.start()
 
     print(f"{Colors.GREEN}{Colors.BOLD}🚀 Gallery started successfully!{Colors.RESET}")
 
     # Discover all network interfaces for a useful access URL
-    debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
-
     if SERVER_HOST == '0.0.0.0':
         import socket
         print(f"👉 Access URLs:")

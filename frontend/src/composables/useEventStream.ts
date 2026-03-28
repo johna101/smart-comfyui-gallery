@@ -6,8 +6,20 @@
  * One connection per browser tab. EventSource handles auto-reconnection.
  */
 
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, reactive } from 'vue'
 import { useGalleryStore } from '@/stores/gallery'
+
+/** Reactive scan progress state — shared across components via useScanProgress() */
+const scanProgress = reactive({
+  scanning: false,
+  processed: 0,
+  total: 0,
+  phase: '' as string
+})
+
+export function useScanProgress() {
+  return scanProgress
+}
 
 export function useEventStream() {
   let eventSource: EventSource | null = null
@@ -126,6 +138,25 @@ export function useEventStream() {
       gallery.removeFile(data.old_file_id)
       if (isFolderRelevant(data.folder_key)) {
         debouncedRefetch()
+      }
+    })
+
+    // --- Scan progress events ---
+
+    eventSource.addEventListener('scan_progress', (e) => {
+      const data = JSON.parse(e.data)
+      if (data.phase === 'complete') {
+        scanProgress.scanning = false
+        scanProgress.processed = 0
+        scanProgress.total = 0
+        scanProgress.phase = ''
+        // Refresh current view to pick up any changes from the scan
+        debouncedRefetch(true)
+      } else {
+        scanProgress.scanning = true
+        scanProgress.processed = data.processed ?? 0
+        scanProgress.total = data.total ?? 0
+        scanProgress.phase = data.phase ?? 'scanning'
       }
     })
 

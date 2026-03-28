@@ -192,7 +192,8 @@ def _build_folder_view(folder_key, args):
     while curr and curr in folders:
         f_info = folders[curr]
         breadcrumbs.append({'key': curr, 'display_name': f_info['display_name']})
-        ancestor_keys.add(curr)
+        if curr != folder_key:
+            ancestor_keys.add(curr)
         curr = f_info.get('parent')
     breadcrumbs.reverse()
 

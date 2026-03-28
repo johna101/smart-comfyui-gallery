@@ -2,14 +2,16 @@
 import { onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useGalleryStore } from '@/stores/gallery'
-import { useEventStream } from '@/composables/useEventStream'
+import { useEventStream, useScanProgress } from '@/composables/useEventStream'
 import FolderSidebar from '@/components/sidebar/FolderSidebar.vue'
 import GalleryToolbar from '@/components/toolbar/GalleryToolbar.vue'
 import LightboxViewer from '@/components/lightbox/LightboxViewer.vue'
 import GalleryGrid from '@/components/gallery/GalleryGrid.vue'
 import SelectionBar from '@/components/gallery/SelectionBar.vue'
+import ScanOverlay from '@/components/ui/ScanOverlay.vue'
 
 const gallery = useGalleryStore()
+const scanProgress = useScanProgress()
 useEventStream()
 const router = useRouter()
 const route = useRoute()
@@ -27,7 +29,7 @@ watch(
   }
 )
 
-onMounted(() => {
+onMounted(async () => {
   gallery.initFromServer()
 
   // Replace the initial URL to match what Flask served
@@ -41,6 +43,13 @@ onMounted(() => {
     'color: #28a045; font-weight: bold; font-size: 14px;',
     `${Object.keys(gallery.folders).length} folders, ${gallery.files.length} files`
   )
+
+  // Check if a scan is already running (covers page load during startup scan)
+  try {
+    const res = await fetch('/galleryout/api/scan_status')
+    const data = await res.json()
+    if (data.scanning) scanProgress.scanning = true
+  } catch { /* SSE will pick up state anyway */ }
 })
 </script>
 
@@ -55,5 +64,6 @@ onMounted(() => {
     </div>
     <SelectionBar />
     <LightboxViewer />
+    <ScanOverlay />
   </div>
 </template>

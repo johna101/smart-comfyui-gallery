@@ -14,6 +14,7 @@ from smartgallery.config import BASE_OUTPUT_PATH, PROTECTED_FOLDER_KEYS
 from smartgallery.models import get_db_connection
 from smartgallery.folders import get_dynamic_folder_config, sync_folder_on_demand
 from smartgallery.events import publish_event
+from smartgallery import state
 from smartgallery.queries import (
     MOUNTED_INSERT, MOUNTED_SELECT_BY_PATH, MOUNTED_DELETE,
     FILES_SELECT_ID_PATH_ALL, FILES_DELETE_BY_ID_BATCH, FILES_DELETE_BY_PATH_LIKE,
@@ -21,6 +22,40 @@ from smartgallery.queries import (
 )
 
 folders_bp = Blueprint('folders_routes', __name__, url_prefix='/galleryout')
+
+
+def _begin_folder_operation():
+    """Stop watcher entirely before a folder mutation."""
+    state.folder_operation_in_progress = True
+    observer = state.watcher_observer
+    if observer:
+        try:
+            observer.stop()
+            observer.join(timeout=5)
+        except Exception:
+            pass
+        state.watcher_observer = None
+    handler = state.watcher_handler
+    if handler:
+        handler.cancel_all_timers()
+
+
+def _end_folder_operation():
+    """Clear operation lock after a folder mutation.
+    Watcher restart is deferred — lets FSEvents buffer drain before re-observing."""
+    import threading as _threading
+
+    state.folder_operation_in_progress = False
+
+    # Restart watcher after a delay so FSEvents buffer has drained
+    def _restart():
+        try:
+            from smartgallery.watcher import start_watcher
+            start_watcher()
+            print("INFO: File watcher restarted after folder operation.")
+        except Exception as e:
+            print(f"WARNING: Failed to restart file watcher: {e}")
+    _threading.Timer(10.0, _restart).start()
 
 
 def _rebase_file_records(conn, old_path, new_path):
@@ -320,18 +355,27 @@ def rename_folder(folder_key):
         return jsonify({'status': 'error', 'message': 'A folder with this name already exists.'}), 400
 
     try:
-        with get_db_connection() as conn:
-            _rebase_file_records(conn, old_folder_path, new_folder_path)
+        _begin_folder_operation()
+
+        try:
             os.rename(os.path.normpath(old_folder_path), os.path.normpath(new_folder_path))
-            conn.commit()
+        except Exception as e:
+            print(f"Rename Error (filesystem): {e}")
+            return jsonify({'status': 'error', 'message': f'Error: {e}'}), 500
 
-        get_dynamic_folder_config(force_refresh=True)
-        publish_event("folder_renamed", {"folder_key": folder_key, "new_name": new_name})
-        return jsonify({'status': 'success', 'message': 'Folder renamed.'})
+        try:
+            with get_db_connection() as conn:
+                _rebase_file_records(conn, old_folder_path, new_folder_path)
+                conn.commit()
+        except Exception as e:
+            print(f"WARNING: Folder renamed on disk but DB update failed (will reconcile on next scan): {e}")
 
-    except Exception as e:
-        print(f"Rename Error: {e}")
-        return jsonify({'status': 'error', 'message': f'Error: {e}'}), 500
+    finally:
+        _end_folder_operation()
+
+    get_dynamic_folder_config(force_refresh=True)
+    publish_event("folder_renamed", {"folder_key": folder_key, "new_name": new_name})
+    return jsonify({'status': 'success', 'message': 'Folder renamed.'})
 
 
 @folders_bp.route('/move_folder/<string:folder_key>', methods=['POST'])
@@ -366,22 +410,34 @@ def move_folder(folder_key):
         return jsonify({'status': 'error', 'message': f'A folder named "{folder_name}" already exists in the destination.'}), 400
 
     try:
-        with get_db_connection() as conn:
-            _rebase_file_records(conn, old_folder_path, new_folder_path)
+        # Suppress watcher events during the move to prevent cascade
+        _begin_folder_operation()
+
+        # Filesystem move first — if this fails, nothing to roll back
+        try:
             shutil.move(os.path.normpath(old_folder_path), os.path.normpath(new_folder_path))
-            conn.commit()
+        except Exception as e:
+            print(f"Move Folder Error (filesystem): {e}")
+            return jsonify({'status': 'error', 'message': f'Error: {e}'}), 500
 
-        get_dynamic_folder_config(force_refresh=True)
-        publish_event("folder_moved", {
-            "folder_key": folder_key,
-            "dest_key": dest_key,
-            "folder_name": folder_name,
-        })
-        return jsonify({'status': 'success', 'message': f'Folder "{folder_name}" moved successfully.'})
+        # Rewrite DB paths to match the new location
+        try:
+            with get_db_connection() as conn:
+                _rebase_file_records(conn, old_folder_path, new_folder_path)
+                conn.commit()
+        except Exception as e:
+            print(f"WARNING: Folder moved on disk but DB update failed (will reconcile on next scan): {e}")
 
-    except Exception as e:
-        print(f"Move Folder Error: {e}")
-        return jsonify({'status': 'error', 'message': f'Error: {e}'}), 500
+    finally:
+        _end_folder_operation()
+
+    get_dynamic_folder_config(force_refresh=True)
+    publish_event("folder_moved", {
+        "folder_key": folder_key,
+        "dest_key": dest_key,
+        "folder_name": folder_name,
+    })
+    return jsonify({'status': 'success', 'message': f'Folder "{folder_name}" moved successfully.'})
 
 
 @folders_bp.route('/delete_folder/<string:folder_key>', methods=['POST'])

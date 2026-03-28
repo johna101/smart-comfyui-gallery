@@ -105,7 +105,7 @@ function toggleExpand() {
     }
     return
   }
-  // If collapsing and the active folder is a descendant, navigate to this folder
+  // If collapsing while a descendant is active, redirect selection here first
   if (isExpanded.value && props.mode === 'nav') {
     const activeKey = gallery.currentFolderKey
     if (activeKey !== props.folderKey && isDescendant(activeKey, props.folderKey)) {

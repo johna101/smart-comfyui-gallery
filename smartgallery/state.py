@@ -19,3 +19,14 @@ REMOTE_VERSION = None
 # Background job tracking
 rescan_jobs = {}
 zip_jobs = {}
+
+# Scan state (set by full_sync_database, read by API endpoint and SSE)
+scan_in_progress = False
+
+# Operation lock — set during folder mutations (move/rename/delete) to suppress
+# watcher events and redundant folder config rescans during the operation.
+folder_operation_in_progress = False
+
+# Watcher references — set by start_watcher(), used to pause/resume during folder ops
+watcher_handler = None
+watcher_observer = None
