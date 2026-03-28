@@ -45,22 +45,23 @@ def _begin_folder_operation():
 
 
 def _end_folder_operation():
-    """Clear operation lock after a folder mutation.
-    Watcher restart is deferred — lets FSEvents buffer drain before re-observing."""
+    """Restart watcher immediately but keep suppression flag set briefly.
+    The watcher is back online for new ComfyUI output, but FSEvents replay
+    from the folder op is absorbed by the _suppressed() checks in handlers."""
     import threading as _threading
 
-    state.folder_operation_in_progress = False
+    # Restart watcher now — it's online but events are still suppressed
+    try:
+        from smartgallery.watcher import start_watcher
+        start_watcher()
+    except Exception as e:
+        print(f"WARNING: Failed to restart file watcher: {e}")
 
-    # Restart watcher after a delay so FSEvents buffer has drained
-    def _restart():
+    # Clear flag after 3s — enough for FSEvents to flush its replay buffer
+    def _clear():
         state.watcher_restart_timer = None
-        try:
-            from smartgallery.watcher import start_watcher
-            start_watcher()
-            print("INFO: File watcher restarted after folder operation.")
-        except Exception as e:
-            print(f"WARNING: Failed to restart file watcher: {e}")
-    timer = _threading.Timer(10.0, _restart)
+        state.folder_operation_in_progress = False
+    timer = _threading.Timer(3.0, _clear)
     state.watcher_restart_timer = timer
     timer.start()
 
