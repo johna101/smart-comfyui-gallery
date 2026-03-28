@@ -30,3 +30,4 @@ folder_operation_in_progress = False
 # Watcher references — set by start_watcher(), used to pause/resume during folder ops
 watcher_handler = None
 watcher_observer = None
+watcher_restart_timer = None  # Pending restart timer — cancelled if another op starts

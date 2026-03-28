@@ -27,6 +27,10 @@ folders_bp = Blueprint('folders_routes', __name__, url_prefix='/galleryout')
 def _begin_folder_operation():
     """Stop watcher entirely before a folder mutation."""
     state.folder_operation_in_progress = True
+    # Cancel any pending restart from a previous operation
+    if state.watcher_restart_timer:
+        state.watcher_restart_timer.cancel()
+        state.watcher_restart_timer = None
     observer = state.watcher_observer
     if observer:
         try:
@@ -49,13 +53,16 @@ def _end_folder_operation():
 
     # Restart watcher after a delay so FSEvents buffer has drained
     def _restart():
+        state.watcher_restart_timer = None
         try:
             from smartgallery.watcher import start_watcher
             start_watcher()
             print("INFO: File watcher restarted after folder operation.")
         except Exception as e:
             print(f"WARNING: Failed to restart file watcher: {e}")
-    _threading.Timer(10.0, _restart).start()
+    timer = _threading.Timer(10.0, _restart)
+    state.watcher_restart_timer = timer
+    timer.start()
 
 
 def _rebase_file_records(conn, old_path, new_path):
