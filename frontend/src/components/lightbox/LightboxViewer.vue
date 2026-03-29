@@ -170,7 +170,8 @@ function storyboard() {
 // --- Inject to ComfyUI ---
 async function sendToInput() {
   const file = currentFile.value
-  if (!file || !gallery.hasInputPath) return
+  if (!file) return
+  if (!gallery.hasInputPath) { toast.show('ComfyUI input path not configured'); return }
 
   try {
     const res = await fileApi.injectInput(file.id)
@@ -182,7 +183,8 @@ async function sendToInput() {
 
 async function sendWorkflow() {
   const file = currentFile.value
-  if (!file?.has_workflow || !gallery.hasWorkflowsPath) return
+  if (!file?.has_workflow) return
+  if (!gallery.hasWorkflowsPath) { toast.show('ComfyUI workflows path not configured'); return }
 
   // Pre-fill with source filename stem + today's date
   const stem = file.name.replace(/\.[^.]+$/, '')

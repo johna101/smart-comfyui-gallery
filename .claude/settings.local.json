@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(grep -r logo /Users/john/dev/smart-comfyui-gallery --include=*.py --include=*.html --include=*.css --include=*.js --include=*.vue --exclude-dir=node_modules)",
+      "Bash(npm run:*)",
+      "Bash(git pull:*)"
+    ]
+  }
+}

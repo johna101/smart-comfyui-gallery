@@ -459,20 +459,19 @@ def rename_file(file_id):
 
 # --- INJECT: SEND TO COMFYUI ---
 
-def _inject_filename(stem, ext, dest_folder):
+def _inject_filename(stem, ext, dest_folder, subfolder=None):
     """
-    Generate a unique filename in the gallery/ subfolder using the pattern:
-    {stem}_{YYYYMMDD}_{NN}.{ext}
-    Creates the gallery/ subfolder if it doesn't exist.
+    Generate a unique filename using the pattern: {stem}_{YYYYMMDD}_{NN}.{ext}
+    Optionally places in a subfolder (created if needed).
     Returns (full_path, filename).
     """
-    gallery_dir = os.path.join(dest_folder, 'gallery')
-    os.makedirs(gallery_dir, exist_ok=True)
+    target_dir = os.path.join(dest_folder, subfolder) if subfolder else dest_folder
+    os.makedirs(target_dir, exist_ok=True)
 
     today = date.today().strftime('%Y%m%d')
     for n in range(1, 100):
         filename = f"{stem}_{today}_{n:02d}{ext}"
-        full_path = os.path.join(gallery_dir, filename)
+        full_path = os.path.join(target_dir, filename)
         if not os.path.exists(full_path):
             return full_path, filename
 
@@ -538,7 +537,7 @@ def inject_workflow(file_id):
         stem = os.path.splitext(os.path.basename(filepath))[0]
 
     try:
-        dest_path, filename = _inject_filename(stem, '.json', COMFYUI_WORKFLOWS_PATH)
+        dest_path, filename = _inject_filename(stem, '.json', COMFYUI_WORKFLOWS_PATH, subfolder='gallery')
         if not dest_path:
             return jsonify({'status': 'error', 'message': 'Too many files with this name today.'}), 409
 
