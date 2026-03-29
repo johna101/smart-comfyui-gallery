@@ -207,7 +207,10 @@ def full_sync_database(conn):
                         conn.commit()
                         inserted += len(chunk)
                         chunk = []
-                        _publish_scan_progress(inserted, total)
+
+                    # Update UI progress every 100 files (decoupled from DB batch size)
+                    if done_count % 100 < len(done):
+                        _publish_scan_progress(inserted + len(chunk), total)
 
                     # Submit more work — but pause if a folder operation is active
                     if not state.folder_operation_in_progress:
