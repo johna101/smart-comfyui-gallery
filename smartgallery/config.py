@@ -84,8 +84,17 @@ def _optional_int(v):
 # USER CONFIGURATION — resolved from env > settings.json > defaults
 # ============================================================================
 
-BASE_OUTPUT_PATH = _resolve('BASE_OUTPUT_PATH', 'comfyui_output_path', None)
-BASE_INPUT_PATH = _resolve('BASE_INPUT_PATH', 'comfyui_input_path', None)
+# Base ComfyUI path — specific paths derive from this unless explicitly overridden
+COMFYUI_PATH = _resolve('COMFYUI_PATH', 'comfyui_path', None)
+
+# Specific paths: explicit setting > derived from COMFYUI_PATH > None
+_default_output = os.path.join(COMFYUI_PATH, 'output') if COMFYUI_PATH else None
+_default_input = os.path.join(COMFYUI_PATH, 'input') if COMFYUI_PATH else None
+_default_workflows = os.path.join(COMFYUI_PATH, 'user', 'default', 'workflows') if COMFYUI_PATH else None
+
+BASE_OUTPUT_PATH = _resolve('BASE_OUTPUT_PATH', 'comfyui_output_path', _default_output)
+BASE_INPUT_PATH = _resolve('BASE_INPUT_PATH', 'comfyui_input_path', _default_input)
+COMFYUI_WORKFLOWS_PATH = _resolve('COMFYUI_WORKFLOWS_PATH', 'comfyui_workflows_path', _default_workflows)
 
 # Data path defaults to SMART_GALLERY_ROOT/data (not inside ComfyUI output)
 _default_data_path = os.path.join(SMART_GALLERY_ROOT, 'data')
@@ -277,10 +286,15 @@ def print_configuration():
         print_row("Settings File", _settings_path, True, (False, "NOT FOUND"))
 
     print_row("Server Port", SERVER_PORT, env_name='SERVER_PORT')
+    if COMFYUI_PATH:
+        print_row("ComfyUI Path", COMFYUI_PATH, True,
+                  _check_path_status(COMFYUI_PATH), 'COMFYUI_PATH')
     print_row("Output Path", BASE_OUTPUT_PATH or "(not set)", True,
               _check_path_status(BASE_OUTPUT_PATH), 'BASE_OUTPUT_PATH')
     print_row("Input Path", BASE_INPUT_PATH or "(not set)", True,
               _check_path_status(BASE_INPUT_PATH), 'BASE_INPUT_PATH')
+    print_row("Workflows Path", COMFYUI_WORKFLOWS_PATH or "(not set)", True,
+              _check_path_status(COMFYUI_WORKFLOWS_PATH), 'COMFYUI_WORKFLOWS_PATH')
     print_row("Data Path", BASE_SMARTGALLERY_PATH, True,
               _check_path_status(BASE_SMARTGALLERY_PATH), 'BASE_SMARTGALLERY_PATH')
 

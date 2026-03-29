@@ -43,6 +43,12 @@ export const fileApi = {
 
   checkMetadata: (fileId: string) =>
     request<{ status: string; has_workflow: boolean; has_ai_caption: boolean; ai_caption: string }>(`${BASE}/check_metadata/${fileId}`),
+
+  injectInput: (fileId: string) =>
+    post<{ status: string; message: string; filename: string }>(`${BASE}/inject_input/${fileId}`, {}),
+
+  injectWorkflow: (fileId: string, filename?: string) =>
+    post<{ status: string; message: string; filename: string }>(`${BASE}/inject_workflow/${fileId}`, { filename }),
 }
 
 // --- Batch operations ---
@@ -123,6 +129,8 @@ export const navApi = {
       appVersion: string
       ffmpegAvailable: boolean
       streamThreshold: number
+      hasInputPath: boolean
+      hasWorkflowsPath: boolean
     }>(`${BASE}/api/folder/${folderKey}${qs}`)
   },
 }

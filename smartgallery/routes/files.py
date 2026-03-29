@@ -6,9 +6,10 @@ import hashlib
 import shutil
 import time
 import re
+from datetime import date
 from flask import Blueprint, request, jsonify, abort
 
-from smartgallery.config import DELETE_TO
+from smartgallery.config import DELETE_TO, BASE_INPUT_PATH, COMFYUI_WORKFLOWS_PATH
 from smartgallery.models import get_db_connection
 from smartgallery.processing import safe_delete_file
 from smartgallery.folders import get_dynamic_folder_config
@@ -454,3 +455,98 @@ def rename_file(file_id):
     except Exception as e:
         print(f"ERROR: Rename failed: {e}")
         return jsonify({'status': 'error', 'message': f'Error: {e}'}), 500
+
+
+# --- INJECT: SEND TO COMFYUI ---
+
+def _inject_filename(stem, ext, dest_folder):
+    """
+    Generate a unique filename in the gallery/ subfolder using the pattern:
+    {stem}_{YYYYMMDD}_{NN}.{ext}
+    Creates the gallery/ subfolder if it doesn't exist.
+    Returns (full_path, filename).
+    """
+    gallery_dir = os.path.join(dest_folder, 'gallery')
+    os.makedirs(gallery_dir, exist_ok=True)
+
+    today = date.today().strftime('%Y%m%d')
+    for n in range(1, 100):
+        filename = f"{stem}_{today}_{n:02d}{ext}"
+        full_path = os.path.join(gallery_dir, filename)
+        if not os.path.exists(full_path):
+            return full_path, filename
+
+    # Extremely unlikely — 99 files with same stem on same day
+    return None, None
+
+
+@files_bp.route('/inject_input/<string:file_id>', methods=['POST'])
+def inject_input(file_id):
+    """Copy a file to the ComfyUI input folder for use as img2img reference."""
+    if not BASE_INPUT_PATH:
+        return jsonify({'status': 'error', 'message': 'ComfyUI input path not configured.'}), 400
+
+    filepath = get_file_info_from_db(file_id, 'path')
+
+    if not os.path.exists(filepath):
+        return jsonify({'status': 'error', 'message': 'Source file not found on disk.'}), 404
+
+    stem, ext = os.path.splitext(os.path.basename(filepath))
+
+    try:
+        dest_path, filename = _inject_filename(stem, ext, BASE_INPUT_PATH)
+        if not dest_path:
+            return jsonify({'status': 'error', 'message': 'Too many files with this name today.'}), 409
+
+        shutil.copy2(filepath, dest_path)
+        return jsonify({'status': 'success', 'message': f'Sent to ComfyUI input', 'filename': filename})
+
+    except Exception as e:
+        print(f"ERROR: inject_input failed: {e}")
+        return jsonify({'status': 'error', 'message': f'Failed to send: {e}'}), 500
+
+
+@files_bp.route('/inject_workflow/<string:file_id>', methods=['POST'])
+def inject_workflow(file_id):
+    """Extract workflow JSON from a file and save it to the ComfyUI workflows folder."""
+    if not COMFYUI_WORKFLOWS_PATH:
+        return jsonify({'status': 'error', 'message': 'ComfyUI workflows path not configured.'}), 400
+
+    filepath = get_file_info_from_db(file_id, 'path')
+
+    if not os.path.exists(filepath):
+        return jsonify({'status': 'error', 'message': 'Source file not found on disk.'}), 404
+
+    # Import here to avoid circular imports at module level
+    from smartgallery.processing import extract_workflow
+
+    workflow_json = extract_workflow(filepath, target_type='ui')
+    if not workflow_json:
+        return jsonify({'status': 'error', 'message': 'No workflow found in this file.'}), 404
+
+    # Use custom filename from request, or auto-generate from source file stem
+    data = request.json or {}
+    custom_name = (data.get('filename') or '').strip()
+
+    if custom_name:
+        # Sanitize: remove invalid chars and .json extension if provided
+        custom_name = re.sub(r'[\\/:"*?<>|]', '', custom_name)
+        if custom_name.lower().endswith('.json'):
+            custom_name = custom_name[:-5]
+        stem = custom_name
+    else:
+        stem = os.path.splitext(os.path.basename(filepath))[0]
+
+    try:
+        dest_path, filename = _inject_filename(stem, '.json', COMFYUI_WORKFLOWS_PATH)
+        if not dest_path:
+            return jsonify({'status': 'error', 'message': 'Too many files with this name today.'}), 409
+
+        with open(dest_path, 'w', encoding='utf-8') as f:
+            f.write(workflow_json)
+
+        return jsonify({'status': 'success', 'message': f'Workflow sent to ComfyUI', 'filename': filename})
+
+    except Exception as e:
+        print(f"ERROR: inject_workflow failed: {e}")
+        return jsonify({'status': 'error', 'message': f'Failed to send: {e}'}), 500

@@ -29,7 +29,7 @@ Forked for personal use and active refactoring. Not intended for upstream contri
 - `startup.py` — server initialization, version check, network discovery banner
 - `routes/` — Flask Blueprints:
   - `gallery.py` — main view, JSON API for SPA navigation, SQL path filtering, skip_folders optimization
-  - `files.py` — file CRUD (move, copy, delete, rename, favourite)
+  - `files.py` — file CRUD (move, copy, delete, rename, favourite, inject to ComfyUI)
   - `folders.py` — folder CRUD (create, mount, rename, delete, move, browse)
   - `media.py` — serve files, thumbnails, storyboards (incl. hi-res), video streaming with range requests
   - `ai.py` — AI search queue, indexing control (skips macOS `._*` resource forks)
@@ -51,8 +51,8 @@ Forked for personal use and active refactoring. Not intended for upstream contri
   - `toolbar/` — GalleryToolbar, FilterPanel, RescanProgress
   - `compare/` — ImageCompare (side-by-side + slider wipe mode, metadata diff)
   - `storyboard/` — StoryboardViewer (grid + zoom with HD toggle, keyboard nav, PNG download)
-  - `ui/` — FolderPickerDialog (reusable, isolated expand state), ScanOverlay (progress bar during scans)
-- **Composables:** useFolderNavigation, useLightboxZoom, useLightboxKeys, useSelection, useThumbnailCache, useEventStream (SSE + scan progress)
+  - `ui/` — FolderPickerDialog (reusable, isolated expand state), ScanOverlay (progress bar during scans), AppToast (global toast notifications)
+- **Composables:** useFolderNavigation, useLightboxZoom, useLightboxKeys, useSelection, useThumbnailCache, useEventStream (SSE + scan progress), useToast (global singleton toast)
 - **Tailwind v4:** scoped `<style>` blocks need `@reference "tailwindcss"` for `@apply` to work
 
 ### Performance Architecture
@@ -136,8 +136,10 @@ Config resolution order (highest priority wins):
 `settings.json` lives in `SMART_GALLERY_ROOT/settings.json`. The `data/` subdir is auto-created for DB, thumbnails, and caches.
 
 Available settings.json keys:
-- `comfyui_output_path` — ComfyUI output folder (required)
-- `comfyui_input_path` — ComfyUI input folder (optional)
+- `comfyui_path` — base ComfyUI installation path; output/input/workflows derive automatically (`output/`, `input/`, `user/default/workflows/`)
+- `comfyui_output_path` — ComfyUI output folder (override; required if `comfyui_path` not set)
+- `comfyui_input_path` — ComfyUI input folder (override; enables "Send to Input" in lightbox)
+- `comfyui_workflows_path` — ComfyUI workflows folder (override; enables "Send Workflow" in lightbox)
 - `data_path` — cache/DB location (default: `SMART_GALLERY_ROOT/data`)
 - `ffprobe_path` — path to ffprobe, or `"auto"` (default: auto-detect)
 - `server_host` — default `0.0.0.0`
@@ -148,8 +150,10 @@ Available settings.json keys:
 
 ### Environment Variables (override settings.json)
 - `SMART_GALLERY_ROOT` — root directory for settings.json and data/ (default: CWD)
-- `BASE_OUTPUT_PATH` — ComfyUI output folder
-- `BASE_INPUT_PATH` — ComfyUI input folder
+- `COMFYUI_PATH` — base ComfyUI path (derives output/input/workflows)
+- `BASE_OUTPUT_PATH` — ComfyUI output folder (overrides derived)
+- `BASE_INPUT_PATH` — ComfyUI input folder (overrides derived)
+- `COMFYUI_WORKFLOWS_PATH` — ComfyUI workflows folder (overrides derived)
 - `BASE_SMARTGALLERY_PATH` — cache/DB location
 - `SERVER_HOST` — default `0.0.0.0` (all interfaces)
 - `SERVER_PORT` — default `8189`
@@ -233,6 +237,10 @@ No automated test suite. Changes verified manually by running the app against re
 - API error messages include server response body (not just HTTP status)
 - Chunked scan: DB writes interleaved with file processing, not batched at end
 - Scan executor uses incremental job submission (pausable during folder ops)
+- ComfyUI inject: one-click send image to input folder or workflow to workflows folder from lightbox
+- `comfyui_path` base setting: single path derives output/input/workflows, specific paths override
+- Global toast notification system (useToast composable + AppToast component, replaces per-component notifications)
+- Lightbox keyboard shortcuts: Q = Send to Input, Shift+W = Send Workflow to ComfyUI
 
 ## Known Issues
 - Sidebar: initial scroll-to-active-folder unreliable on first load for deep folders
@@ -248,7 +256,7 @@ No automated test suite. Changes verified manually by running the app against re
 
 ## Candidate Features
 - **Storyboard burst frames** — from zoom view, request N additional frames around current timestamp (e.g., 10 frames, 5 either side, every 2nd frame). For finding the perfect frame in fast-moving video (avoiding blinks, catching expressions). Backend: ffmpeg can extract at any timestamp, so burst = parallel extraction of N timestamps around the current one
-- **Save storyboard frame to ComfyUI input** — save HD frame directly to BASE_INPUT_PATH for use as reference in further generations
+- **Save storyboard frame to ComfyUI input** — from storyboard zoom view, send HD frame directly to BASE_INPUT_PATH/gallery/ via the inject system (reuses inject_input pattern but with frame extraction)
 - **Idle pre-fetch thumbnails** — when scroll is idle, speculatively load the next row of thumbnails using requestIdleCallback or scroll-idle detection. Currently thumbnails only load when visible for 150ms
 - **Video compare** — two videos selected, synchronised side-by-side playback with shared transport controls
 - **Workflow provenance graph** — select a file, trace all associated models, LoRAs, source images via workflow_files field. "Show me everything that contributed to this image"

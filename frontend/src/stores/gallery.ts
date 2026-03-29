@@ -43,6 +43,8 @@ export const useGalleryStore = defineStore('gallery', () => {
   const ffmpegAvailable = ref(false)
   const streamThreshold = ref(0)
   const updateAvailable = ref(false)
+  const hasInputPath = ref(false)
+  const hasWorkflowsPath = ref(false)
 
   // --- Computed ---
   const selectedCount = computed(() => selectedFiles.value.size)
@@ -208,6 +210,8 @@ export const useGalleryStore = defineStore('gallery', () => {
     ffmpegAvailable.value = data.ffmpegAvailable
     streamThreshold.value = data.streamThreshold
     updateAvailable.value = data.updateAvailable
+    hasInputPath.value = data.hasInputPath ?? false
+    hasWorkflowsPath.value = data.hasWorkflowsPath ?? false
   }
 
   function toggleFileSelection(fileId: string) {
@@ -293,6 +297,8 @@ export const useGalleryStore = defineStore('gallery', () => {
       appVersion.value = data.appVersion
       ffmpegAvailable.value = data.ffmpegAvailable
       streamThreshold.value = data.streamThreshold
+      hasInputPath.value = data.hasInputPath ?? hasInputPath.value
+      hasWorkflowsPath.value = data.hasWorkflowsPath ?? hasWorkflowsPath.value
     } finally {
       loading.value = false
     }
@@ -306,7 +312,7 @@ export const useGalleryStore = defineStore('gallery', () => {
     availableExtensions, availablePrefixes, selectedExtensions, selectedPrefixes,
     activeFiltersCount, showFavorites, isRecursive, currentScope,
     selectedFiles, enableAiSearch, isAiSearch, aiQuery, isGlobalSearch,
-    appVersion, ffmpegAvailable, streamThreshold, updateAvailable,
+    appVersion, ffmpegAvailable, streamThreshold, updateAvailable, hasInputPath, hasWorkflowsPath,
     // Computed
     selectedCount, hasSelection, currentFolder, hasMoreFiles,
     filteredFiles, filteredCount, highlightedFolderKeys, focusedFolderKey, lastSelectedFileId,

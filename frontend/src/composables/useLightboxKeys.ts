@@ -21,6 +21,8 @@ export interface LightboxKeyActions {
   toggleHelp: () => void
   toggleMeta: () => void
   openStoryboard: () => void
+  sendToInput: () => void
+  sendWorkflow: () => void
   isOpen: () => boolean
 }
 
@@ -40,6 +42,22 @@ export function useLightboxKeys(actions: LightboxKeyActions) {
 
     // Don't intercept browser shortcuts (Cmd+R, Ctrl+R, etc.)
     if (e.metaKey || e.ctrlKey || e.altKey) return
+
+    // Handle Shift+ combos before the main switch (which assumes no modifiers)
+    if (e.shiftKey) {
+      switch (key) {
+        case 'w':
+          e.preventDefault()
+          actions.sendWorkflow()
+          return
+        case '?':
+          // Allow ? which is Shift+/ on most keyboards
+          e.preventDefault()
+          actions.toggleHelp()
+          return
+      }
+      return // Ignore other Shift+ combos
+    }
 
     switch (key) {
       case 'escape':
@@ -90,6 +108,10 @@ export function useLightboxKeys(actions: LightboxKeyActions) {
       case 'f':
         e.preventDefault()
         actions.toggleFavorite()
+        break
+      case 'q':
+        e.preventDefault()
+        actions.sendToInput()
         break
       case '+':
       case '=':

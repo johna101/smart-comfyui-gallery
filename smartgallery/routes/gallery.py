@@ -7,7 +7,8 @@ from flask import Blueprint, redirect, url_for, request, jsonify, render_templat
 from werkzeug.utils import secure_filename
 
 from smartgallery.config import (
-    BASE_OUTPUT_PATH, ENABLE_AI_SEARCH, PROTECTED_FOLDER_KEYS,
+    BASE_OUTPUT_PATH, BASE_INPUT_PATH, COMFYUI_WORKFLOWS_PATH,
+    ENABLE_AI_SEARCH, PROTECTED_FOLDER_KEYS,
     APP_VERSION, GITHUB_REPO_URL, STREAM_THRESHOLD_BYTES
 )
 from smartgallery import state
@@ -226,6 +227,8 @@ def _build_folder_view(folder_key, args):
         'appVersion': APP_VERSION,
         'ffmpegAvailable': state.FFPROBE_EXECUTABLE_PATH is not None,
         'streamThreshold': STREAM_THRESHOLD_BYTES,
+        'hasInputPath': bool(BASE_INPUT_PATH),
+        'hasWorkflowsPath': bool(COMFYUI_WORKFLOWS_PATH),
     }
 
 
@@ -269,7 +272,9 @@ def gallery_view(folder_key):
                            update_available=state.UPDATE_AVAILABLE,
                            remote_version=state.REMOTE_VERSION,
                            ffmpeg_available=data['ffmpegAvailable'],
-                           stream_threshold=data['streamThreshold'])
+                           stream_threshold=data['streamThreshold'],
+                           has_input_path=data['hasInputPath'],
+                           has_workflows_path=data['hasWorkflowsPath'])
 
 
 @gallery_bp.route('/api/folder/<string:folder_key>')

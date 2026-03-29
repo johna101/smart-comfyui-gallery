@@ -9,6 +9,7 @@ import LightboxViewer from '@/components/lightbox/LightboxViewer.vue'
 import GalleryGrid from '@/components/gallery/GalleryGrid.vue'
 import SelectionBar from '@/components/gallery/SelectionBar.vue'
 import ScanOverlay from '@/components/ui/ScanOverlay.vue'
+import AppToast from '@/components/ui/AppToast.vue'
 
 const gallery = useGalleryStore()
 const scanProgress = useScanProgress()
@@ -65,5 +66,6 @@ onMounted(async () => {
     <SelectionBar />
     <LightboxViewer />
     <ScanOverlay />
+    <AppToast />
   </div>
 </template>

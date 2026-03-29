@@ -6,6 +6,7 @@ import { fileApi, mediaApi } from '@/api/gallery'
 import { useLightboxZoom } from '@/composables/useLightboxZoom'
 import { useLightboxKeys } from '@/composables/useLightboxKeys'
 import { useFolderNavigation } from '@/composables/useFolderNavigation'
+import { useToast } from '@/composables/useToast'
 import LightboxHeader from './LightboxHeader.vue'
 import LightboxMedia from './LightboxMedia.vue'
 import StoryboardViewer from '@/components/storyboard/StoryboardViewer.vue'
@@ -15,13 +16,12 @@ const gallery = useGalleryStore()
 const ui = useUiStore()
 const zoom = useLightboxZoom()
 const { navigateToFolder } = useFolderNavigation()
+const toast = useToast()
 
 // --- State ---
 const uiHidden = ref(false)
 const showHelp = ref(false)
 const showMeta = ref(false)
-const notification = ref('')
-const notificationTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 const mediaRef = ref<InstanceType<typeof LightboxMedia> | null>(null)
 
 // --- Computed ---
@@ -47,13 +47,6 @@ watch(() => ui.lightboxIndex, () => {
 watch(() => ui.lightboxOpen, (open) => {
   document.body.style.overflow = open ? 'hidden' : ''
 })
-
-// --- Notifications ---
-function showNotification(msg: string) {
-  notification.value = msg
-  if (notificationTimer.value) clearTimeout(notificationTimer.value)
-  notificationTimer.value = setTimeout(() => { notification.value = '' }, 2000)
-}
 
 // --- Navigation ---
 function navigate(direction: number) {
@@ -90,9 +83,9 @@ async function deleteFile() {
     // Navigate to next (or wrap to last)
     const idx = Math.min(ui.lightboxIndex, gallery.filteredFiles.length - 1)
     ui.openLightbox(gallery.filteredFiles[idx].id, idx)
-    showNotification('File deleted')
+    toast.show('File deleted')
   } catch (e) {
-    showNotification('Delete failed')
+    toast.show('Delete failed')
   }
 }
 
@@ -103,9 +96,9 @@ async function toggleFavorite() {
   try {
     const res = await fileApi.toggleFavorite(file.id)
     file.is_favorite = res.is_favorite ? 1 : 0
-    showNotification(res.is_favorite ? '★ Favorited' : '☆ Unfavorited')
+    toast.show(res.is_favorite ? '★ Favorited' : '☆ Unfavorited')
   } catch {
-    showNotification('Failed to toggle favorite')
+    toast.show('Failed to toggle favorite')
   }
 }
 
@@ -118,9 +111,9 @@ function rename() {
   fileApi.renameFile(file.id, newName)
     .then(res => {
       file.name = res.new_name
-      showNotification(`Renamed to ${res.new_name}`)
+      toast.show(`Renamed to ${res.new_name}`)
     })
-    .catch(() => showNotification('Rename failed'))
+    .catch(() => toast.show('Rename failed'))
 }
 
 function download() {
@@ -139,9 +132,9 @@ async function copyWorkflow() {
     const res = await fetch(mediaApi.workflowUrl(currentFile.value.id))
     const text = await res.text()
     await navigator.clipboard.writeText(text)
-    showNotification('Workflow copied to clipboard')
+    toast.show('Workflow copied to clipboard')
   } catch {
-    showNotification('Copy failed')
+    toast.show('Copy failed')
   }
 }
 
@@ -174,6 +167,39 @@ function storyboard() {
   showStoryboard.value = true
 }
 
+// --- Inject to ComfyUI ---
+async function sendToInput() {
+  const file = currentFile.value
+  if (!file || !gallery.hasInputPath) return
+
+  try {
+    const res = await fileApi.injectInput(file.id)
+    toast.show(`Sent to input: ${res.filename}`)
+  } catch (e: any) {
+    toast.show(e.message || 'Failed to send to input')
+  }
+}
+
+async function sendWorkflow() {
+  const file = currentFile.value
+  if (!file?.has_workflow || !gallery.hasWorkflowsPath) return
+
+  // Pre-fill with source filename stem + today's date
+  const stem = file.name.replace(/\.[^.]+$/, '')
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const suggested = `${stem}_${today}`
+
+  const name = prompt('Workflow name for ComfyUI:', suggested)
+  if (name === null) return // cancelled
+
+  try {
+    const res = await fileApi.injectWorkflow(file.id, name || undefined)
+    toast.show(`Workflow sent: ${res.filename}`)
+  } catch (e: any) {
+    toast.show(e.message || 'Failed to send workflow')
+  }
+}
+
 function navigateToFolderFromLightbox(folderKey: string) {
   close()
   navigateToFolder(folderKey)
@@ -204,9 +230,9 @@ function toggleMeta() {
 async function copyToClipboard(text: string) {
   try {
     await navigator.clipboard.writeText(text)
-    showNotification('Copied to clipboard')
+    toast.show('Copied to clipboard')
   } catch {
-    showNotification('Copy failed')
+    toast.show('Copy failed')
   }
 }
 
@@ -229,13 +255,15 @@ useLightboxKeys({
   resetZoom: () => zoom.resetZoom(),
   cyclePanStep: () => {
     const step = zoom.cyclePanStep()
-    showNotification(`Pan step: ${step}px`)
+    toast.show(`Pan step: ${step}px`)
   },
   pan: (dx, dy) => zoom.panByStep(dx, dy),
   toggleUi,
   toggleHelp,
   toggleMeta,
   openStoryboard: storyboard,
+  sendToInput,
+  sendWorkflow,
 })
 </script>
 
@@ -264,6 +292,8 @@ useLightboxKeys({
           @storyboard="storyboard"
           @navigate-folder="navigateToFolderFromLightbox"
           @toggle-meta="toggleMeta"
+          @send-to-input="sendToInput"
+          @send-workflow="sendWorkflow"
         />
 
         <!-- Media area -->
@@ -388,16 +418,6 @@ useLightboxKeys({
           <span v-else class="text-white/30">? for shortcuts</span>
         </div>
 
-        <!-- Notification toast -->
-        <Transition name="toast">
-          <div
-            v-if="notification"
-            class="fixed bottom-16 left-1/2 -translate-x-1/2 bg-white/15 backdrop-blur-sm text-white px-4 py-2 rounded-lg text-sm z-50"
-          >
-            {{ notification }}
-          </div>
-        </Transition>
-
         <!-- Help overlay -->
         <Transition name="fade">
           <div
@@ -423,6 +443,8 @@ useLightboxKeys({
                 <span class="text-white/50">O</span><span>Open in New Tab</span>
                 <span class="text-white/50">E</span><span>Storyboard</span>
                 <span class="text-white/50">I</span><span>File Info & Prompt</span>
+                <span class="text-white/50">Q</span><span>Send to ComfyUI Input</span>
+                <span class="text-white/50">Shift+W</span><span>Send Workflow to ComfyUI</span>
                 <span class="text-white/50">+/-/0</span><span>Zoom In/Out/Reset</span>
                 <span class="text-white/50">Numpad</span><span>Pan image</span>
                 <span class="text-white/50">.</span><span>Cycle pan step</span>
@@ -459,17 +481,6 @@ useLightboxKeys({
 .lightbox-enter-from,
 .lightbox-leave-to {
   opacity: 0;
-}
-
-/* Toast */
-.toast-enter-active,
-.toast-leave-active {
-  transition: all 0.3s ease;
-}
-.toast-enter-from,
-.toast-leave-to {
-  opacity: 0;
-  transform: translate(-50%, 10px);
 }
 
 /* Fade */

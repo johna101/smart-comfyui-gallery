@@ -23,6 +23,8 @@ const emit = defineEmits<{
   storyboard: []
   navigateFolder: [folderKey: string]
   toggleMeta: []
+  sendToInput: []
+  sendWorkflow: []
 }>()
 
 const gallery = useGalleryStore()
@@ -171,6 +173,23 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
           title="Copy Workflow (C)"
           @click="emit('copyWorkflow')"
         >📎</button>
+      </template>
+
+      <!-- Inject to ComfyUI -->
+      <template v-if="gallery.hasInputPath || (gallery.hasWorkflowsPath && hasWorkflow)">
+        <div class="w-px h-6 bg-white/20 mx-1" />
+        <button
+          v-if="gallery.hasInputPath"
+          class="lb-btn text-cyan-400 hover:text-cyan-300"
+          title="Send to ComfyUI Input (Q)"
+          @click="emit('sendToInput')"
+        >📥</button>
+        <button
+          v-if="gallery.hasWorkflowsPath && hasWorkflow"
+          class="lb-btn text-green-400 hover:text-green-300"
+          title="Send Workflow to ComfyUI (Shift+W)"
+          @click="emit('sendWorkflow')"
+        >📤</button>
       </template>
 
       <!-- Storyboard -->

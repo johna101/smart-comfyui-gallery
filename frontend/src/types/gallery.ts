@@ -72,6 +72,8 @@ export interface GalleryBootstrapData {
   remoteVersion: string | null
   ffmpegAvailable: boolean
   streamThreshold: number
+  hasInputPath: boolean
+  hasWorkflowsPath: boolean
 }
 
 declare global {
