@@ -16,7 +16,7 @@ from smartgallery.folders import get_dynamic_folder_config
 from smartgallery.events import publish_event
 from smartgallery.utils import folder_key_from_filepath
 from smartgallery.queries import (
-    FILES_SELECT_BY_ID, FILES_SELECT_BATCH_WITH_AI, FILES_MERGE_UPDATE,
+    FILES_SELECT_BY_ID, FILES_SELECT_BATCH, FILES_MERGE_UPDATE,
     FILES_UPDATE_PATH, FILES_DELETE_BY_ID, FILES_DELETE_BY_ID_BATCH,
     FILES_INSERT_FULL, FILES_SELECT_PATHS_BATCH, FILES_EXISTS_BY_ID,
     FILES_SELECT_FAVORITE, FILES_UPDATE_FAVORITE, FILES_UPDATE_FAVORITE_BATCH,
@@ -31,7 +31,6 @@ files_bp = Blueprint('files', __name__, url_prefix='/galleryout')
 # Keys extracted from file_info for merge/move/rename operations
 _META_KEYS = (
     'size', 'has_workflow', 'is_favorite', 'type', 'duration', 'dimensions',
-    'ai_last_scanned', 'ai_caption', 'ai_embedding', 'ai_error',
     'workflow_files', 'workflow_prompt',
 )
 
@@ -42,7 +41,6 @@ def _meta_params(meta, new_path, new_name, new_id):
         new_path, new_name, time.time(),
         meta['size'], meta['has_workflow'], meta['is_favorite'],
         meta['type'], meta['duration'], meta['dimensions'],
-        meta['ai_last_scanned'], meta['ai_caption'], meta['ai_embedding'], meta['ai_error'],
         meta['workflow_files'], meta['workflow_prompt'],
         new_id,
     )
@@ -101,7 +99,7 @@ def move_batch():
     with get_db_connection() as conn:
         # Pre-fetch all file metadata in one query to avoid N+1
         placeholders = ','.join(['?'] * len(file_ids))
-        all_rows = conn.execute(FILES_SELECT_BATCH_WITH_AI.format(placeholders=placeholders), file_ids).fetchall()
+        all_rows = conn.execute(FILES_SELECT_BATCH.format(placeholders=placeholders), file_ids).fetchall()
         file_map = {row['id']: dict(row) for row in all_rows}
 
         for file_id in file_ids:
@@ -203,7 +201,7 @@ def copy_batch():
     with get_db_connection() as conn:
         # Pre-fetch all file metadata in one query to avoid N+1
         placeholders = ','.join(['?'] * len(file_ids))
-        all_rows = conn.execute(FILES_SELECT_BATCH_WITH_AI.format(placeholders=placeholders), file_ids).fetchall()
+        all_rows = conn.execute(FILES_SELECT_BATCH.format(placeholders=placeholders), file_ids).fetchall()
         file_map = {row['id']: dict(row) for row in all_rows}
 
         for file_id in file_ids:
@@ -236,7 +234,6 @@ def copy_batch():
                 is_fav = file_info['is_favorite'] if keep_favorites else 0
 
                 # Insert Copy
-                # We copy AI data too because the image content is identical!
                 conn.execute(FILES_INSERT_FULL, (
                     new_id, final_dest_path, new_mtime, final_filename,
                     file_info['type'], file_info['duration'], file_info['dimensions'],
@@ -244,7 +241,6 @@ def copy_batch():
                     is_fav,
                     file_info['last_scanned'],
                     file_info['workflow_files'], file_info['workflow_prompt'],
-                    file_info['ai_last_scanned'], file_info['ai_caption'], file_info['ai_embedding'], file_info['ai_error']
                 ))
 
                 copied_count += 1

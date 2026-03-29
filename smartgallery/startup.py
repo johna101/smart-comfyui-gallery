@@ -10,7 +10,7 @@ import threading
 
 from smartgallery.config import (
     Colors, APP_VERSION, APP_VERSION_DATE, GITHUB_REPO_URL, GITHUB_RAW_URL,
-    BASE_OUTPUT_PATH, BASE_INPUT_PATH, SERVER_HOST, SERVER_PORT, ENABLE_AI_SEARCH,
+    BASE_OUTPUT_PATH, BASE_INPUT_PATH, SERVER_HOST, SERVER_PORT,
     _settings_path
 )
 from smartgallery import state
@@ -147,7 +147,7 @@ def show_ffmpeg_warning():
 def run_app():
     """Main entry point - startup checks and run the Flask server."""
     from smartgallery.config import print_configuration
-    from smartgallery.folders import initialize_db, run_startup_scan, background_watcher_task
+    from smartgallery.folders import initialize_db, run_startup_scan
     from smartgallery import create_app
 
     print_startup_banner()
@@ -164,8 +164,7 @@ def run_app():
                 "server_host": "0.0.0.0",
                 "server_port": 8189,
                 "delete_mode": "permanent",
-                "thumbnail_width": 300,
-                "enable_ai_search": False
+                "thumbnail_width": 300
             }
             try:
                 with open(_settings_path, 'w') as f:
@@ -220,14 +219,6 @@ def run_app():
     is_reloader_parent = debug_mode and not os.environ.get('WERKZEUG_RUN_MAIN')
 
     if not is_reloader_parent:
-        if ENABLE_AI_SEARCH:
-            try:
-                watcher = threading.Thread(target=background_watcher_task, daemon=True)
-                watcher.start()
-                print(f"{Colors.BLUE}INFO: AI Background Watcher started.{Colors.RESET}")
-            except Exception as e:
-                print(f"{Colors.RED}ERROR: Failed to start AI Watcher: {e}{Colors.RESET}")
-
         # Start filesystem watcher for real-time change detection
         try:
             from smartgallery.watcher import start_watcher

@@ -32,7 +32,6 @@ Forked for personal use and active refactoring. Not intended for upstream contri
   - `files.py` — file CRUD (move, copy, delete, rename, favourite, inject to ComfyUI)
   - `folders.py` — folder CRUD (create, mount, rename, delete, move, browse)
   - `media.py` — serve files, thumbnails, storyboards (incl. hi-res), video streaming with range requests
-  - `ai.py` — AI search queue, indexing control (skips macOS `._*` resource forks)
   - `api.py` — search options, compare, sync status, scan status, SSE event stream
   - `batch.py` — rescan, zip preparation/download
 
@@ -58,7 +57,7 @@ Forked for personal use and active refactoring. Not intended for upstream contri
 ### Performance Architecture
 - **Two-tier filtering:** Server fetches dataset (scope/recursive), client filters instantly (name, extensions, prefixes, dates, favourites)
 - **LazyImage:** IntersectionObserver + 150ms debounce, AbortController cancellation, blob URL cache (2000 entries LRU)
-- **SQL optimization:** Path filtering in SQL WHERE (not Python), explicit column lists (no ai_embedding BLOB), indexed columns
+- **SQL optimization:** Path filtering in SQL WHERE (not Python), explicit column lists, indexed columns
 - **Thumbnail caching:** HTTP Cache-Control immutable, in-memory path cache, thread-local DB connections
 - **Payload optimization:** `skip_folders` param omits 500KB folders map on repeat navigations, folder config cached between mutations
 
@@ -92,7 +91,7 @@ Three layers detect and propagate file/folder changes:
 
 **Critical: Flask debug mode** (`FLASK_DEBUG=true`):
 - Werkzeug reloader spawns a child process — both parent and child run `run_app()`
-- Background threads (watcher, scan, AI watcher) must only start in the child process
+- Background threads (watcher, scan) must only start in the child process
 - Check `os.environ.get('WERKZEUG_RUN_MAIN')` — only truthy in the child
 - Without this, `state` flags set in child are invisible to parent's watcher (separate memory)
 
@@ -146,8 +145,6 @@ Available settings.json keys:
 - `server_port` — default `8189`
 - `delete_mode` — trash folder path, or `"permanent"` (default: permanent)
 - `thumbnail_width` — default `300`
-- `enable_ai_search` — default `false`
-
 ### Environment Variables (override settings.json)
 - `SMART_GALLERY_ROOT` — root directory for settings.json and data/ (default: CWD)
 - `COMFYUI_PATH` — base ComfyUI path (derives output/input/workflows)

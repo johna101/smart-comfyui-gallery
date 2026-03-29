@@ -51,39 +51,9 @@ def init_db(conn=None):
                 size INTEGER DEFAULT 0,
                 last_scanned REAL DEFAULT 0,
                 workflow_files TEXT DEFAULT '',
-                workflow_prompt TEXT DEFAULT '',
-                ai_last_scanned REAL DEFAULT 0,
-                ai_caption TEXT,
-                ai_embedding BLOB,
-                ai_error TEXT
+                workflow_prompt TEXT DEFAULT ''
             )
         ''')
-
-        # 2. AI TABLE CREATION
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS ai_search_queue (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL UNIQUE,
-                query TEXT NOT NULL,
-                limit_results INTEGER DEFAULT 100,
-                status TEXT DEFAULT 'pending',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                completed_at TIMESTAMP NULL
-            );
-        ''')
-
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS ai_search_results (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL,
-                file_id TEXT NOT NULL,
-                score REAL NOT NULL,
-                FOREIGN KEY (session_id) REFERENCES ai_search_queue(session_id)
-            );
-        ''')
-
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_queue_status ON ai_search_queue(status);')
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_results_session ON ai_search_results(session_id);')
 
         # File indexes for fast folder queries and sorting
         conn.execute('CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);')
@@ -92,32 +62,6 @@ def init_db(conn=None):
         # Note: workflow_files and workflow_prompt are NOT indexed because keyword search uses
         # LIKE '%keyword%' (leading wildcard), which forces a full table scan regardless of
         # B-tree indexes. FTS5 virtual table is the correct future solution for this.
-
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS ai_indexing_queue (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                file_path TEXT NOT NULL,
-                file_id TEXT,
-                status TEXT DEFAULT 'pending',
-                force_index INTEGER DEFAULT 0,
-                params TEXT DEFAULT '{}',
-                created_at REAL,
-                updated_at REAL,
-                error_msg TEXT,
-                UNIQUE(file_path) ON CONFLICT REPLACE
-            );
-        ''')
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_ai_idx_status ON ai_indexing_queue(status);')
-
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS ai_watched_folders (
-                path TEXT PRIMARY KEY,
-                recursive INTEGER DEFAULT 0,
-                added_at REAL
-            );
-        ''')
-
-        conn.execute("CREATE TABLE IF NOT EXISTS ai_metadata (key TEXT PRIMARY KEY, value TEXT, updated_at REAL)")
 
         # MOUNT POINTS TABLE
         conn.execute('''
@@ -148,11 +92,7 @@ def init_db(conn=None):
             'size': 'INTEGER DEFAULT 0',
             'last_scanned': 'REAL DEFAULT 0',
             'workflow_files': "TEXT DEFAULT ''",
-            'workflow_prompt': "TEXT DEFAULT ''",
-            'ai_last_scanned': 'REAL DEFAULT 0',
-            'ai_caption': 'TEXT',
-            'ai_embedding': 'BLOB',
-            'ai_error': 'TEXT'
+            'workflow_prompt': "TEXT DEFAULT ''"
         }
 
         cursor = conn.execute("PRAGMA table_info(files)")

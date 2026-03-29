@@ -12,7 +12,7 @@ from watchdog.events import FileSystemEventHandler
 from smartgallery.config import (
     BASE_OUTPUT_PATH,
     THUMBNAIL_CACHE_FOLDER_NAME, SQLITE_CACHE_FOLDER_NAME,
-    ZIP_CACHE_FOLDER_NAME, AI_MODELS_FOLDER_NAME
+    ZIP_CACHE_FOLDER_NAME,
 )
 from smartgallery.models import get_db_connection
 from smartgallery.processing import process_single_file
@@ -32,7 +32,7 @@ VALID_EXTENSIONS = {
 
 EXCLUDED_DIRS = {
     THUMBNAIL_CACHE_FOLDER_NAME, SQLITE_CACHE_FOLDER_NAME,
-    ZIP_CACHE_FOLDER_NAME, AI_MODELS_FOLDER_NAME,
+    ZIP_CACHE_FOLDER_NAME, '.AImodels',
     'venv', 'venv-ai', '.git', 'node_modules', '__pycache__'
 }
 

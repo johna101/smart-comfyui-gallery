@@ -156,15 +156,11 @@ WORKFLOW_PROMPT_BLACKLIST = {
     "None"
 }
 
-# --- AI SEARCH CONFIGURATION ---
-ENABLE_AI_SEARCH = _resolve('ENABLE_AI_SEARCH', 'enable_ai_search', False, cast=_bool_cast)
-
 # --- CACHE AND FOLDER NAMES ---
 THUMBNAIL_CACHE_FOLDER_NAME = '.thumbnails_cache'
 SQLITE_CACHE_FOLDER_NAME = '.sqlite_cache'
 DATABASE_FILENAME = 'gallery_cache.sqlite'
 ZIP_CACHE_FOLDER_NAME = '.zip_downloads'
-AI_MODELS_FOLDER_NAME = '.AImodels'
 
 # --- APP INFO ---
 APP_VERSION = "1.55"
@@ -306,6 +302,4 @@ def print_configuration():
               env_name='DELETE_TO')
     print_row("Thumbnail Width", f"{THUMBNAIL_WIDTH}px")
     print_row("Video Streaming", f"Files > {STREAM_THRESHOLD_MB} MB use range requests")
-    if ENABLE_AI_SEARCH:
-        print_row("AI Search", "Enabled")
     print(f"{Colors.HEADER}-----------------------------{Colors.RESET}\n")

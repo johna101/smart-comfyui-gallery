@@ -18,7 +18,6 @@ from smartgallery import state
 from smartgallery.queries import (
     MOUNTED_INSERT, MOUNTED_SELECT_BY_PATH, MOUNTED_DELETE,
     FILES_SELECT_ID_PATH_ALL, FILES_DELETE_BY_ID_BATCH, FILES_DELETE_BY_PATH_LIKE,
-    AI_WATCHED_DELETE, AI_WATCHED_DELETE_LIKE, AI_WATCHED_SELECT_PATHS, AI_WATCHED_UPDATE_PATH,
 )
 
 folders_bp = Blueprint('folders_routes', __name__, url_prefix='/galleryout')
@@ -71,7 +70,7 @@ def _rebase_file_records(conn, old_path, new_path):
 
     Computes new file paths by replacing the old_path prefix with new_path,
     generates new content-addressed IDs, cleans ghost collisions, and
-    updates the ai_watched_folders table.
+    updates mounted folder paths.
     """
     all_files = conn.execute(FILES_SELECT_ID_PATH_ALL).fetchall()
 
@@ -97,15 +96,6 @@ def _rebase_file_records(conn, old_path, new_path):
 
     if update_data:
         conn.executemany("UPDATE files SET id = ?, path = ? WHERE id = ?", update_data)
-
-    # Update AI watch list
-    watched = conn.execute(AI_WATCHED_SELECT_PATHS).fetchall()
-    for row in watched:
-        w_path = row['path']
-        w_check = w_path.lower() if is_windows else w_path
-        if w_check == check_old or w_check.startswith(check_old):
-            w_suffix = w_path[len(old_path):]
-            conn.execute(AI_WATCHED_UPDATE_PATH, (new_path + w_suffix, w_path))
 
 
 @folders_bp.route('/create_folder', methods=['POST'])
@@ -250,16 +240,9 @@ def unmount_folder():
             # 1. Remove from Mounts registry
             conn.execute(MOUNTED_DELETE, (norm_path,))
 
-            # 2. Remove from AI Watch list (if present)
-            conn.execute(AI_WATCHED_DELETE, (path_to_remove,))
-
-            # 3. CRITICAL: Remove the file records associated with this path from the Gallery DB
+            # 2. Remove the file records associated with this path from the Gallery DB
             clean_path_for_query = path_to_remove + os.sep + '%'
             conn.execute(FILES_DELETE_BY_PATH_LIKE, (clean_path_for_query,))
-
-            # 4. Also clean pending AI jobs for these files
-            std_path_prefix = path_to_remove.replace('\\', '/')
-            conn.execute("DELETE FROM ai_indexing_queue WHERE file_path LIKE ?", (std_path_prefix + '/%',))
 
             conn.commit()
 
@@ -458,11 +441,6 @@ def delete_folder(folder_key):
         with get_db_connection() as conn:
             # 1. Remove files from DB
             conn.execute(FILES_DELETE_BY_PATH_LIKE, (folder_path + os.sep + '%',))
-
-            # 2. AI WATCHED FOLDERS CLEANUP
-            conn.execute(AI_WATCHED_DELETE, (folder_path,))
-            conn.execute(AI_WATCHED_DELETE_LIKE, (folder_path + os.sep + '%',))
-
             conn.commit()
 
         # 3. Physical deletion

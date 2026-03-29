@@ -241,7 +241,7 @@ def serve_thumbnail(file_id):
         response.headers['Cache-Control'] = 'public, max-age=86400, immutable'
         return response
 
-    # Only fetch what we need, not the full row (avoids ai_embedding blob)
+    # Only fetch what we need, not the full row
     with get_db_connection() as conn:
         row = conn.execute(FILES_SELECT_FOR_THUMBNAIL, (file_id,)).fetchone()
     if not row:
@@ -719,9 +719,6 @@ def check_metadata(file_id):
         return jsonify({
             'status': 'success',
             'has_workflow': bool(row['has_workflow']),
-            'has_ai_caption': bool(row['ai_caption']),
-            'ai_caption': row['ai_caption'] or "",
-            'ai_last_scanned': row['ai_last_scanned'] or 0,
             'real_path': real_path_resolved if is_different else None
         })
     except Exception as e:

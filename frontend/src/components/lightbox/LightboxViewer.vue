@@ -377,13 +377,6 @@ useLightboxKeys({
                   </div>
                 </div>
 
-                <!-- AI Caption -->
-                <div v-if="currentFile.ai_caption">
-                  <h4 class="text-white/50 text-xs uppercase tracking-wide mb-1">AI Caption</h4>
-                  <div class="text-white/80 text-xs leading-relaxed bg-white/5 rounded-lg p-3">
-                    {{ currentFile.ai_caption }}
-                  </div>
-                </div>
               </div>
             </div>
           </Transition>

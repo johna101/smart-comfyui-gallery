@@ -42,7 +42,7 @@ export const fileApi = {
     post<{ status: string; new_name: string; new_id: string }>(`${BASE}/rename_file/${fileId}`, { new_name: newName }),
 
   checkMetadata: (fileId: string) =>
-    request<{ status: string; has_workflow: boolean; has_ai_caption: boolean; ai_caption: string }>(`${BASE}/check_metadata/${fileId}`),
+    request<{ status: string; has_workflow: boolean }>(`${BASE}/check_metadata/${fileId}`),
 
   injectInput: (fileId: string) =>
     post<{ status: string; message: string; filename: string }>(`${BASE}/inject_input/${fileId}`, {}),

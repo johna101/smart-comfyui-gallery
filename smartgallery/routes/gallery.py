@@ -8,7 +8,7 @@ from werkzeug.utils import secure_filename
 
 from smartgallery.config import (
     BASE_OUTPUT_PATH, BASE_INPUT_PATH, COMFYUI_WORKFLOWS_PATH,
-    ENABLE_AI_SEARCH, PROTECTED_FOLDER_KEYS,
+    PROTECTED_FOLDER_KEYS,
     APP_VERSION, GITHUB_REPO_URL, STREAM_THRESHOLD_BYTES
 )
 from smartgallery import state
@@ -20,8 +20,7 @@ from smartgallery.folders import (
 )
 from smartgallery.events import publish_event
 from smartgallery.queries import (
-    FILES_SELECT_GALLERY, FILES_COUNT, FILES_SELECT_AI_SEARCH,
-    AI_SEARCH_QUEUE_SELECT_INFO,
+    FILES_SELECT_GALLERY, FILES_COUNT,
 )
 
 gallery_bp = Blueprint('gallery', __name__, url_prefix='/galleryout')
@@ -44,7 +43,6 @@ def _build_folder_view(folder_key, args):
     is_recursive = args.get('recursive', 'false').lower() == 'true'
     search_scope = args.get('scope', 'local')
     is_global_search = (search_scope == 'global')
-    ai_session_id = args.get('ai_session_id')
 
     # Text filters
     search_term = args.get('search', '').strip()
@@ -60,103 +58,70 @@ def _build_folder_view(folder_key, args):
     if not selected_prefixes and args.get('prefixes'):
         selected_prefixes = [p.strip() for p in args.get('prefixes', '').split(',') if p.strip()]
 
-    is_ai_search = False
-    ai_query_text = ""
+    # --- BUILD QUERY ---
+    with get_db_connection() as conn:
+        conditions, params = [], []
 
-    # --- PATH A: AI SEARCH RESULTS ---
-    if ENABLE_AI_SEARCH and ai_session_id:
-        with get_db_connection() as conn:
-            try:
-                queue_info = conn.execute(AI_SEARCH_QUEUE_SELECT_INFO, (ai_session_id,)).fetchone()
-                if queue_info and queue_info['status'] == 'completed':
-                    is_ai_search = True
-                    ai_query_text = queue_info['query']
-                    rows = conn.execute(FILES_SELECT_AI_SEARCH, (ai_session_id,)).fetchall()
+        if search_term:
+            conditions.append("name LIKE ?")
+            params.append(f"%{search_term}%")
 
-                    files_list = []
-                    for row in rows:
-                        d = dict(row)
-                        if 'ai_embedding' in d:
-                            del d['ai_embedding']
-                        files_list.append(d)
+        if wf_files:
+            for kw in [k.strip() for k in wf_files.split(',') if k.strip()]:
+                conditions.append("workflow_files LIKE ?")
+                params.append(f"%{normalize_smart_path(kw)}%")
 
-                    state.gallery_view_cache = files_list
-            except Exception as e:
-                print(f"AI Search Error: {e}")
-                is_ai_search = False
+        if wf_prompt:
+            for kw in [k.strip() for k in wf_prompt.split(',') if k.strip()]:
+                conditions.append("workflow_prompt LIKE ?")
+                params.append(f"%{kw}%")
 
-    # --- PATH B: STANDARD VIEW / SEARCH ---
-    if not is_ai_search:
-        with get_db_connection() as conn:
-            conditions, params = [], []
+        if args.get('favorites') == 'true': conditions.append("is_favorite = 1")
+        if args.get('hide_favorites') == 'true': conditions.append("is_favorite = 0")
+        if args.get('no_workflow') == 'true': conditions.append("has_workflow = 0")
 
-            if search_term:
-                conditions.append("name LIKE ?")
-                params.append(f"%{search_term}%")
+        if start_date:
+            try: conditions.append("mtime >= ?"); params.append(datetime.strptime(start_date, '%Y-%m-%d').timestamp())
+            except ValueError: pass
+        if end_date:
+            try: conditions.append("mtime <= ?"); params.append(datetime.strptime(end_date, '%Y-%m-%d').timestamp() + 86399)
+            except ValueError: pass
 
-            if wf_files:
-                for kw in [k.strip() for k in wf_files.split(',') if k.strip()]:
-                    conditions.append("workflow_files LIKE ?")
-                    params.append(f"%{normalize_smart_path(kw)}%")
+        if selected_exts:
+            valid_exts = [e for e in selected_exts if e.strip()]
+            if valid_exts:
+                conditions.append(f"({' OR '.join(['name LIKE ?'] * len(valid_exts))})")
+                params.extend(f"%.{e.lstrip('.').lower()}" for e in valid_exts)
 
-            if wf_prompt:
-                for kw in [k.strip() for k in wf_prompt.split(',') if k.strip()]:
-                    conditions.append("workflow_prompt LIKE ?")
-                    params.append(f"%{kw}%")
+        if selected_prefixes:
+            valid_pfx = [p.strip() for p in selected_prefixes if p.strip()]
+            if valid_pfx:
+                conditions.append(f"({' OR '.join(['name LIKE ?'] * len(valid_pfx))})")
+                params.extend(f"{p}_%" for p in valid_pfx)
 
-            if args.get('favorites') == 'true': conditions.append("is_favorite = 1")
-            if args.get('hide_favorites') == 'true': conditions.append("is_favorite = 0")
-            if args.get('no_workflow') == 'true': conditions.append("has_workflow = 0")
-            if args.get('no_ai_caption') == 'true':
-                conditions.append("(ai_caption IS NULL OR ai_caption = '')")
+        # --- PATH FILTERING IN SQL (fast) ---
+        target_norm = folder_path.replace('\\', '/')
+        if not target_norm.endswith('/'):
+            target_norm += '/'
 
-            if start_date:
-                try: conditions.append("mtime >= ?"); params.append(datetime.strptime(start_date, '%Y-%m-%d').timestamp())
-                except ValueError: pass
-            if end_date:
-                try: conditions.append("mtime <= ?"); params.append(datetime.strptime(end_date, '%Y-%m-%d').timestamp() + 86399)
-                except ValueError: pass
+        if not is_global_search:
+            if is_recursive:
+                conditions.append("REPLACE(path, '\\', '/') LIKE ?")
+                params.append(target_norm + '%')
+            else:
+                conditions.append("REPLACE(path, '\\', '/') LIKE ?")
+                params.append(target_norm + '%')
+                conditions.append("REPLACE(path, '\\', '/') NOT LIKE ?")
+                params.append(target_norm + '%/%')
 
-            if selected_exts:
-                valid_exts = [e for e in selected_exts if e.strip()]
-                if valid_exts:
-                    conditions.append(f"({' OR '.join(['name LIKE ?'] * len(valid_exts))})")
-                    params.extend(f"%.{e.lstrip('.').lower()}" for e in valid_exts)
+        sort_by = 'name' if args.get('sort_by') == 'name' else 'mtime'
+        sort_order = "ASC" if args.get('sort_order', 'desc').lower() == 'asc' else "DESC"
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
-            if selected_prefixes:
-                valid_pfx = [p.strip() for p in selected_prefixes if p.strip()]
-                if valid_pfx:
-                    conditions.append(f"({' OR '.join(['name LIKE ?'] * len(valid_pfx))})")
-                    params.extend(f"{p}_%" for p in valid_pfx)
+        query = FILES_SELECT_GALLERY.format(where_clause=where_clause, sort_by=sort_by, sort_order=sort_order)
+        rows = conn.execute(query, params).fetchall()
 
-            # --- PATH FILTERING IN SQL (fast) ---
-            # Normalize folder path for SQL matching
-            target_norm = folder_path.replace('\\', '/')
-            if not target_norm.endswith('/'):
-                target_norm += '/'
-
-            if not is_global_search:
-                if is_recursive:
-                    # All files under this folder (any depth)
-                    conditions.append("REPLACE(path, '\\', '/') LIKE ?")
-                    params.append(target_norm + '%')
-                else:
-                    # Only direct children — path starts with folder/ but has no further /
-                    # Match: folder/filename.png but not folder/sub/filename.png
-                    conditions.append("REPLACE(path, '\\', '/') LIKE ?")
-                    params.append(target_norm + '%')
-                    conditions.append("REPLACE(path, '\\', '/') NOT LIKE ?")
-                    params.append(target_norm + '%/%')
-
-            sort_by = 'name' if args.get('sort_by') == 'name' else 'mtime'
-            sort_order = "ASC" if args.get('sort_order', 'desc').lower() == 'asc' else "DESC"
-            where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-
-            # v_files view excludes ai_embedding blob
-            query = FILES_SELECT_GALLERY.format(where_clause=where_clause, sort_by=sort_by, sort_order=sort_order)
-            rows = conn.execute(query, params).fetchall()
-
-            state.gallery_view_cache = [dict(row) for row in rows]
+        state.gallery_view_cache = [dict(row) for row in rows]
 
     # 4. Final Metadata
     active_filters_count = 0
@@ -170,7 +135,6 @@ def _build_folder_view(folder_key, args):
     if args.get('favorites') == 'true': active_filters_count += 1
     if args.get('hide_favorites') == 'true': active_filters_count += 1
     if args.get('no_workflow') == 'true': active_filters_count += 1
-    if ENABLE_AI_SEARCH and args.get('no_ai_caption') == 'true': active_filters_count += 1
 
     if is_global_search:
         active_filters_count += 1
@@ -217,9 +181,6 @@ def _build_folder_view(folder_key, args):
         'protectedFolderKeys': list(PROTECTED_FOLDER_KEYS),
         'showFavorites': args.get('favorites', 'false').lower() == 'true',
         'hideFavorites': args.get('hide_favorites', 'false').lower() == 'true',
-        'enableAiSearch': ENABLE_AI_SEARCH,
-        'isAiSearch': is_ai_search,
-        'aiQuery': ai_query_text,
         'isGlobalSearch': is_global_search,
         'activeFiltersCount': active_filters_count,
         'currentScope': search_scope,
@@ -260,9 +221,6 @@ def gallery_view(folder_key):
                            selected_prefixes=data['selectedPrefixes'],
                            protected_folder_keys=data['protectedFolderKeys'],
                            show_favorites=data['showFavorites'],
-                           enable_ai_search=data['enableAiSearch'],
-                           is_ai_search=data['isAiSearch'],
-                           ai_query=data['aiQuery'],
                            is_global_search=data['isGlobalSearch'],
                            active_filters_count=data['activeFiltersCount'],
                            current_scope=data['currentScope'],

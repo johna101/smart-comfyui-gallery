@@ -32,10 +32,6 @@ export const useGalleryStore = defineStore('gallery', () => {
   // --- Selection ---
   const selectedFiles = ref(new Set<string>())
 
-  // --- AI ---
-  const enableAiSearch = ref(false)
-  const isAiSearch = ref(false)
-  const aiQuery = ref('')
   const isGlobalSearch = ref(false)
 
   // --- App info ---
@@ -200,9 +196,6 @@ export const useGalleryStore = defineStore('gallery', () => {
     selectedPrefixes.value = data.selectedPrefixes
     activeFiltersCount.value = data.activeFiltersCount
     showFavorites.value = data.showFavorites
-    enableAiSearch.value = data.enableAiSearch
-    isAiSearch.value = data.isAiSearch
-    aiQuery.value = data.aiQuery
     isGlobalSearch.value = data.isGlobalSearch
     currentScope.value = data.currentScope
     isRecursive.value = data.isRecursive
@@ -311,7 +304,7 @@ export const useGalleryStore = defineStore('gallery', () => {
     totalFiles, totalFolderFiles, totalDbFiles,
     availableExtensions, availablePrefixes, selectedExtensions, selectedPrefixes,
     activeFiltersCount, showFavorites, isRecursive, currentScope,
-    selectedFiles, enableAiSearch, isAiSearch, aiQuery, isGlobalSearch,
+    selectedFiles, isGlobalSearch,
     appVersion, ffmpegAvailable, streamThreshold, updateAvailable, hasInputPath, hasWorkflowsPath,
     // Computed
     selectedCount, hasSelection, currentFolder, hasMoreFiles,

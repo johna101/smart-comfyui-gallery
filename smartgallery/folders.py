@@ -13,24 +13,20 @@ from tqdm import tqdm
 
 from smartgallery.config import (
     BASE_OUTPUT_PATH, BASE_INPUT_PATH, BASE_SMARTGALLERY_PATH,
-    ENABLE_AI_SEARCH, THUMBNAIL_CACHE_DIR, SQLITE_CACHE_DIR,
+    THUMBNAIL_CACHE_DIR, SQLITE_CACHE_DIR,
     THUMBNAIL_CACHE_FOLDER_NAME, SQLITE_CACHE_FOLDER_NAME,
-    ZIP_CACHE_FOLDER_NAME, AI_MODELS_FOLDER_NAME,
+    ZIP_CACHE_FOLDER_NAME,
     BATCH_SIZE, MAX_PARALLEL_WORKERS, MAX_PREFIX_DROPDOWN_ITEMS,
     Colors, path_to_key
 )
 from smartgallery.models import get_db_connection, init_db
 from smartgallery.processing import process_single_file, find_ffprobe_path
-from smartgallery.utils import get_standardized_path
 from smartgallery import state
 from smartgallery.events import event_bus, GalleryEvent
 from smartgallery.queries import (
     FILES_UPSERT, FILES_SELECT_PATH_MTIME_ALL, FILES_DELETE_BY_PATH,
     FILES_SELECT_PATH_MTIME_FOLDER, FILES_COUNT,
-    MOUNTED_SELECT_ALL, AI_WATCHED_SELECT, AI_WATCHED_SELECT_PATHS,
-    AI_INDEX_QUEUE_DELETE_COMPLETED_OLD, AI_INDEX_QUEUE_CHECK_ACTIVE,
-    FILES_SELECT_AI_STATUS, FILES_SELECT_AI_STATUS_NORMALIZED,
-    AI_INDEX_QUEUE_UPSERT, EVENT_LOG_PRUNE,
+    MOUNTED_SELECT_ALL, EVENT_LOG_PRUNE,
 )
 
 
@@ -55,25 +51,12 @@ def get_dynamic_folder_config(force_refresh=False):
             'parent': None,
             'children': [],
             'mtime': root_mtime,
-            'is_watched': False,
-            'is_explicitly_watched': False,
             'is_mount': False # Root is never a mount
         }
     }
 
     try:
-        # 1. Fetch Watched Status
-        watched_rules = []
-        if ENABLE_AI_SEARCH:
-            try:
-                with get_db_connection() as conn:
-                    rows = conn.execute(AI_WATCHED_SELECT).fetchall()
-                    for r in rows:
-                        w_path = os.path.normpath(r['path']).replace('\\', '/')
-                        watched_rules.append((w_path, bool(r['recursive'])))
-            except Exception: pass
-
-        # 2. Fetch Mounted Folders (New)
+        # 1. Fetch Mounted Folders
         mounted_paths = set()
         try:
             with get_db_connection() as conn:
@@ -85,7 +68,7 @@ def get_dynamic_folder_config(force_refresh=False):
 
         all_folders = {}
         for dirpath, dirnames, _ in os.walk(BASE_OUTPUT_PATH):
-            dirnames[:] = [d for d in dirnames if not d.startswith('.') and d not in [THUMBNAIL_CACHE_FOLDER_NAME, SQLITE_CACHE_FOLDER_NAME, ZIP_CACHE_FOLDER_NAME, AI_MODELS_FOLDER_NAME]]
+            dirnames[:] = [d for d in dirnames if not d.startswith('.') and d not in [THUMBNAIL_CACHE_FOLDER_NAME, SQLITE_CACHE_FOLDER_NAME, ZIP_CACHE_FOLDER_NAME, '.AImodels']]
             for dirname in dirnames:
                 full_path = os.path.normpath(os.path.join(dirpath, dirname)).replace('\\', '/')
                 relative_path = os.path.relpath(full_path, BASE_OUTPUT_PATH).replace('\\', '/')
@@ -112,35 +95,17 @@ def get_dynamic_folder_config(force_refresh=False):
                 dynamic_config[parent_key]['children'].append(key)
 
             current_path = folder_data['full_path']
-
-            # Watch Logic
-            is_watched_folder = False
-            is_explicitly_watched = False
-            for w_path, is_recursive in watched_rules:
-                if current_path == w_path:
-                    is_watched_folder = True
-                    is_explicitly_watched = True
-                    break
-                if is_recursive and current_path.startswith(w_path + '/'):
-                    is_watched_folder = True
-                    break
-
-            # Mount Logic
             is_mount = (current_path in mounted_paths)
-
-            # NEW: Resolve the physical path (handles Symlinks/Junctions for subfolders too)
             real_path = os.path.realpath(current_path).replace('\\', '/')
 
             dynamic_config[key] = {
                 'display_name': folder_data['display_name'],
                 'path': current_path,
-                'real_path': real_path, # <--- NEW FIELD
+                'real_path': real_path,
                 'relative_path': rel_path,
                 'parent': parent_key,
                 'children': [],
                 'mtime': folder_data['mtime'],
-                'is_watched': is_watched_folder,
-                'is_explicitly_watched': is_explicitly_watched,
                 'is_mount': is_mount
             }
     except FileNotFoundError:
@@ -148,104 +113,6 @@ def get_dynamic_folder_config(force_refresh=False):
 
     state.folder_config_cache = dynamic_config
     return dynamic_config
-
-# --- BACKGROUND WATCHER THREAD ---
-def background_watcher_task():
-    """
-    Periodically scans watched folders.
-    Ensures TRUE incremental indexing:
-    1. Ignores files currently 'pending' or 'processing'.
-    2. Checks 'files' DB: if ai_data is missing or outdated -> queues it.
-    3. Revives 'completed'/'error' queue entries back to 'pending' if the file is dirty.
-    """
-    print("INFO: AI Background Watcher started (Incremental Mode).")
-    while True:
-        try:
-            if ENABLE_AI_SEARCH:
-                with get_db_connection() as conn:
-                    # 1. Cleanup very old jobs to keep table light (> 3 days)
-                    conn.execute(AI_INDEX_QUEUE_DELETE_COMPLETED_OLD, (time.time() - 259200,))
-
-                    watched = conn.execute(AI_WATCHED_SELECT).fetchall()
-
-                    for row in watched:
-                        folder_path = row['path']
-                        is_recursive = row['recursive']
-
-                        valid_exts = {'.png','.jpg','.jpeg','.webp','.gif','.mp4','.mov','.avi','.webm'}
-                        EXCLUDED = {'.thumbnails_cache', '.sqlite_cache', '.zip_downloads', '.AImodels', 'venv', 'venv-ai', '.git'}
-
-                        files_to_check = []
-
-                        if os.path.isdir(folder_path):
-                            if is_recursive:
-                                for root, dirs, files in os.walk(folder_path, topdown=True):
-                                    dirs[:] = [d for d in dirs if not d.startswith('.') and d not in EXCLUDED]
-                                    for f in files:
-                                        if os.path.splitext(f)[1].lower() in valid_exts:
-                                            files_to_check.append(os.path.join(root, f))
-                            else:
-                                try:
-                                    for f in os.listdir(folder_path):
-                                        full = os.path.join(folder_path, f)
-                                        if os.path.isfile(full) and os.path.splitext(f)[1].lower() in valid_exts:
-                                            files_to_check.append(full)
-                                except OSError: pass
-
-                        # Process Candidates
-                        for raw_path in files_to_check:
-                            p_key = get_standardized_path(raw_path)
-
-                            # 1. CHECK ACTIVE STATUS
-                            # Only skip if it is actively waiting or running.
-                            # Do NOT skip if it is 'completed' or 'error' (we might need to retry/update).
-                            active_job = conn.execute(AI_INDEX_QUEUE_CHECK_ACTIVE, (p_key,)).fetchone()
-
-                            if active_job:
-                                continue # Busy, come back later
-
-                            # 2. CHECK FILE STATE IN DB
-                            # We need to find the file ID and its scan timestamp
-                            # We use the robust path lookup logic (normalized slash match)
-                            # to ensure we find the record even if slashes differ.
-
-                            # Try exact match first
-                            file_row = conn.execute(FILES_SELECT_AI_STATUS, (raw_path,)).fetchone()
-
-                            # Fallback: Normalized Match
-                            if not file_row:
-                                norm_p = raw_path.replace('\\', '/')
-                                file_row = conn.execute(FILES_SELECT_AI_STATUS_NORMALIZED, (norm_p,)).fetchone()
-
-                            if not file_row:
-                                # File exists on disk but NOT in DB.
-                                # We cannot index it yet (missing metadata/dimensions).
-                                # The main 'files' sync must run first. We skip it silently.
-                                continue
-
-                            file_id = file_row['id']
-                            last_scan_ts = file_row['ai_last_scanned'] if file_row['ai_last_scanned'] is not None else 0
-                            mtime = file_row['mtime']
-
-                            # 3. DIRTY CHECK (The Core Incremental Logic)
-                            needs_index = False
-
-                            if last_scan_ts == 0:
-                                needs_index = True # Never scanned or Reset by user
-                            elif last_scan_ts < mtime:
-                                needs_index = True # File modified on disk after last scan
-
-                            if needs_index:
-                                # UPSERT: If exists (e.g. 'completed'), revive to 'pending'. If new, insert.
-                                # This fixes the issue where completed items were ignored even after reset.
-                                conn.execute(AI_INDEX_QUEUE_UPSERT, (p_key, file_id, time.time()))
-
-                    conn.commit()
-
-        except Exception as e:
-            print(f"Watcher Loop Error: {e}")
-
-        time.sleep(10) # Faster check cycle (10s instead of 60s) to feel responsive
 
 def _publish_scan_progress(processed, total, phase='processing'):
     """Push lightweight progress event to SSE clients (no DB persistence)."""
@@ -404,11 +271,6 @@ def full_sync_database(conn):
 
             paths_to_remove = [(p,) for p in safe_to_delete]
             conn.executemany(FILES_DELETE_BY_PATH, paths_to_remove)
-
-            # Clean AI Queue for validly deleted files
-            std_paths_to_remove = [(get_standardized_path(p),) for p in safe_to_delete]
-            conn.executemany("DELETE FROM ai_indexing_queue WHERE file_path = ?", std_paths_to_remove)
-
             conn.commit()
 
     state.scan_in_progress = False
@@ -497,7 +359,7 @@ def scan_folder_and_extract_options(folder_path, recursive=False):
             # Recursive scan using os.walk
             for root, dirs, files in os.walk(folder_path):
                 # Filter out hidden/protected folders in-place
-                dirs[:] = [d for d in dirs if not d.startswith('.') and d not in [THUMBNAIL_CACHE_FOLDER_NAME, SQLITE_CACHE_FOLDER_NAME, ZIP_CACHE_FOLDER_NAME, AI_MODELS_FOLDER_NAME]]
+                dirs[:] = [d for d in dirs if not d.startswith('.') and d not in [THUMBNAIL_CACHE_FOLDER_NAME, SQLITE_CACHE_FOLDER_NAME, ZIP_CACHE_FOLDER_NAME, '.AImodels']]
                 for filename in files:
                     if filename.startswith('._'):
                         continue  # Skip macOS resource fork files
@@ -524,25 +386,6 @@ def scan_folder_and_extract_options(folder_path, recursive=False):
 
     return file_count, sorted(list(extensions)), sorted(list(prefixes))
 
-def cleanup_invalid_watched_folders(conn):
-    """
-    Checks if watched folders still exist on disk.
-    [SAFE MODE]: If a folder is missing, we assumes it might be a disconnected drive
-    and we DO NOT remove it automatically to prevent config loss.
-    """
-    try:
-        rows = conn.execute(AI_WATCHED_SELECT_PATHS).fetchall()
-
-        for row in rows:
-            path = row['path']
-            if not os.path.exists(path) or not os.path.isdir(path):
-                # We just WARN the user, we do NOT delete the config.
-                print(f"{Colors.YELLOW}WARN: Watched folder not found (Offline or Deleted): {path}")
-                print(f"      Skipping AI checks for this folder. Config preserved.{Colors.RESET}")
-
-    except Exception as e:
-        print(f"ERROR checking watched folders: {e}")
-
 def initialize_db():
     """Phase 1: Fast DB setup — migrations, pruning, dirs. Must complete before Flask starts."""
     print("INFO: Initializing database...")
@@ -563,8 +406,6 @@ def run_startup_scan():
     """Phase 2: Full file scan — runs in background thread after Flask starts."""
     with get_db_connection() as conn:
         try:
-            if ENABLE_AI_SEARCH:
-                cleanup_invalid_watched_folders(conn)
             print(f"{Colors.BLUE}INFO: Performing startup consistency check...{Colors.RESET}")
             full_sync_database(conn)
         except sqlite3.DatabaseError as e:

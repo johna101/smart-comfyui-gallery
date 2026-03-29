@@ -14,9 +14,6 @@ export interface GalleryFile {
   last_scanned: number
   workflow_files: string
   workflow_prompt: string
-  ai_caption?: string
-  ai_last_scanned?: number
-  score?: number // AI search score
 }
 
 export interface FolderInfo {
@@ -27,8 +24,6 @@ export interface FolderInfo {
   parent: string | null
   children: string[]
   mtime: number
-  is_watched: boolean
-  is_explicitly_watched: boolean
   is_mount: boolean
 }
 
@@ -59,9 +54,6 @@ export interface GalleryBootstrapData {
   selectedPrefixes: string[]
   protectedFolderKeys: string[]
   showFavorites: boolean
-  enableAiSearch: boolean
-  isAiSearch: boolean
-  aiQuery: string
   isGlobalSearch: boolean
   activeFiltersCount: number
   currentScope: string
