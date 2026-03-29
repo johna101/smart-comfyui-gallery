@@ -2,8 +2,6 @@
 
   <h1>SmartGallery for ComfyUI (Personal Fork)</h1>
 
-  <img src="assets/logo.png" width="120" alt="SmartGallery logo" style="margin-top: 10px; margin-bottom: 10px;">
-
   <p>
     A local, offline, browser-based gallery for managing ComfyUI-generated images and videos.<br>
     Preserves workflows, extracts generation metadata, supports search/filter/compare/batch operations.
