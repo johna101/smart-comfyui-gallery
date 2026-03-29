@@ -146,7 +146,8 @@ def extract_workflow(filepath, target_type='ui'):
         target_type: 'ui' (for visual node graph) or 'api' (for real execution values).
     """
     ext = os.path.splitext(filepath)[1].lower()
-    video_exts = ['.mp4', '.mkv', '.webm', '.mov', '.avi']
+    video_exts = ['.mp4', '.mkv', '.webm', '.mov']
+    image_exts = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
 
     found_workflows = {}
 
@@ -155,6 +156,9 @@ def extract_workflow(filepath, target_type='ui'):
         if wf and wf_type:
             if wf_type not in found_workflows:
                 found_workflows[wf_type] = wf
+
+    if ext not in video_exts and ext not in image_exts:
+        return None
 
     if ext in video_exts:
         current_ffprobe_path = state.FFPROBE_EXECUTABLE_PATH
