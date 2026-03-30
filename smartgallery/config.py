@@ -163,8 +163,8 @@ DATABASE_FILENAME = 'gallery_cache.sqlite'
 ZIP_CACHE_FOLDER_NAME = '.zip_downloads'
 
 # --- APP INFO ---
-APP_VERSION = "1.55"
-APP_VERSION_DATE = "Febraury 5, 2026"
+APP_VERSION = "0.01"
+APP_VERSION_DATE = "March 30, 2026"
 GITHUB_REPO_URL = "https://github.com/biagiomaf/smart-comfyui-gallery"
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/biagiomaf/smart-comfyui-gallery/main/smartgallery.py"
 
