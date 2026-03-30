@@ -5,6 +5,7 @@
 import os
 import hashlib
 import logging
+import time
 import threading
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -321,6 +322,51 @@ class SmartGalleryHandler(FileSystemEventHandler):
         logger.info("Watcher: folder tree changed")
 
 
+def _start_root_poller(handler):
+    """Poll BASE_OUTPUT_PATH for new root-level directories.
+
+    Watchdog's inotify watch on the root directory can silently fail to
+    deliver events for new top-level subdirectories on some Linux systems
+    (while child-directory events work fine via their parent's watch).
+    This lightweight poller checks every 10 seconds, comparing os.listdir
+    against a known set, and triggers _handle_folder_created for any new dirs.
+    """
+    known_dirs = set()
+
+    def snapshot():
+        """Return current set of direct child directories."""
+        try:
+            return {
+                name for name in os.listdir(BASE_OUTPUT_PATH)
+                if os.path.isdir(os.path.join(BASE_OUTPUT_PATH, name))
+                and not name.startswith('.')
+                and name not in {THUMBNAIL_CACHE_FOLDER_NAME, SQLITE_CACHE_FOLDER_NAME,
+                                 ZIP_CACHE_FOLDER_NAME, '.AImodels'}
+            }
+        except OSError:
+            return set()
+
+    known_dirs = snapshot()
+
+    def poll_loop():
+        nonlocal known_dirs
+        while True:
+            time.sleep(10)
+            if state.folder_operation_in_progress:
+                continue
+            current = snapshot()
+            new_dirs = current - known_dirs
+            for name in new_dirs:
+                folder_path = os.path.join(BASE_OUTPUT_PATH, name)
+                print(f"[Watcher:Poller] New root folder detected: {name}")
+                handler._handle_folder_created(folder_path)
+            known_dirs = current
+
+    t = threading.Thread(target=poll_loop, daemon=True)
+    t.start()
+    logger.info("Root directory poller started (10s interval)")
+
+
 def start_watcher():
     """Start the filesystem watcher on BASE_OUTPUT_PATH. Returns the Observer."""
     if not BASE_OUTPUT_PATH or not os.path.isdir(BASE_OUTPUT_PATH):
@@ -335,6 +381,10 @@ def start_watcher():
     observer.daemon = True
     observer.start()
     logger.info("File watcher started on %s", BASE_OUTPUT_PATH)
+
+    # Fallback poller for new root-level directories (works around inotify blind spot)
+    _start_root_poller(handler)
+
     return observer
 
 
