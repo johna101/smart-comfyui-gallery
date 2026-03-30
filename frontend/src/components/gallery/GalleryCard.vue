@@ -4,7 +4,7 @@ import type { GalleryFile } from '@/types/gallery'
 import { useGalleryStore } from '@/stores/gallery'
 import { fileApi, mediaApi } from '@/api/gallery'
 import {
-  Settings, Star, Ruler, HardDrive, Calendar, Trash2, Check, Play, Download,
+  Star, Ruler, HardDrive, Calendar, Trash2, Check, Download,
 } from 'lucide-vue-next'
 import LazyImage from './LazyImage.vue'
 
@@ -127,34 +127,27 @@ async function deleteFile(e: MouseEvent) {
         :alt="file.name"
       />
 
-      <!-- Workflow badge / green dot -->
-      <div v-if="hasWorkflow && !focusMode" class="absolute top-2 left-2">
-        <span class="inline-flex items-center gap-1 bg-workflow-bg text-workflow text-xs font-medium px-2 py-0.5 rounded-full border border-workflow/20">
-          <Settings :size="10" /> Workflow
-        </span>
+      <!-- Top-left indicators (focus mode: workflow dot + duration; normal: duration) -->
+      <div class="absolute top-2 left-2 flex items-center gap-1.5">
+        <div
+          v-if="hasWorkflow && focusMode"
+          class="w-3 h-3 rounded-full bg-workflow shadow-lg"
+          title="Has workflow"
+        />
+        <div v-if="isVideo && file.duration" class="flex items-center gap-1 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
+          <span class="w-1.5 h-1.5 rounded-full bg-media-video inline-block" />
+          {{ file.duration }}
+        </div>
+        <div v-if="isAnimated" class="bg-media-video-bg text-media-video text-xs px-1.5 py-0.5 rounded border border-media-video/20">
+          GIF
+        </div>
       </div>
-      <div
-        v-if="hasWorkflow && focusMode"
-        class="absolute top-2 left-2 w-3 h-3 rounded-full bg-workflow shadow-lg"
-        title="Has workflow"
-      />
 
       <!-- Favorite star overlay (focus mode) -->
       <div
         v-if="isFavorite && focusMode"
         class="absolute top-2 right-2 text-favorite drop-shadow"
       ><Star :size="18" class="fill-current" /></div>
-
-      <!-- Duration overlay for videos -->
-      <div v-if="isVideo && file.duration" class="absolute bottom-2 right-2 flex items-center gap-1 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
-        <span class="w-1.5 h-1.5 rounded-full bg-media-video inline-block" />
-        {{ file.duration }}
-      </div>
-
-      <!-- Animated badge -->
-      <div v-if="isAnimated" class="absolute bottom-2 right-2 bg-media-video-bg text-media-video text-xs px-1.5 py-0.5 rounded border border-media-video/20">
-        GIF
-      </div>
 
       <!-- Selection checkmark (focus mode: bottom-left) -->
       <button
@@ -165,18 +158,18 @@ async function deleteFile(e: MouseEvent) {
         <Check :size="14" class="text-fuchsia-600" />
       </button>
 
-      <!-- Play button overlay for videos -->
-      <div v-if="isVideo" class="absolute bottom-2 left-2 bg-black/50 rounded-full p-1.5">
-        <Play :size="16" class="text-white fill-current" />
-      </div>
     </div>
 
     <!-- Metadata (hidden in focus mode) — click selects/deselects -->
     <div v-if="!focusMode" class="p-3 space-y-1.5 cursor-pointer" @click="handleCheckmark">
       <p class="text-white text-sm font-medium truncate" :title="file.name">{{ file.name }}</p>
-      <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-neutral-400 text-xs">
+      <div class="flex items-center gap-x-3 text-neutral-400 text-xs">
         <span v-if="file.dimensions" class="inline-flex items-center gap-0.5"><Ruler :size="11" /> {{ file.dimensions }}</span>
         <span class="inline-flex items-center gap-0.5"><HardDrive :size="11" /> {{ fileSize }}</span>
+        <span class="ml-auto flex items-center gap-1">
+          <span :class="isVideo ? 'pill-video' : isAnimated ? 'pill-video' : 'pill-image'">{{ isVideo ? 'VID' : isAnimated ? 'GIF' : 'IMG' }}</span>
+          <span v-if="hasWorkflow" class="pill-workflow">WF</span>
+        </span>
       </div>
       <div class="text-neutral-500 text-xs inline-flex items-center gap-0.5">
         <Calendar :size="11" /> {{ fileDate }}
@@ -223,7 +216,25 @@ async function deleteFile(e: MouseEvent) {
 <style scoped>
 @reference "tailwindcss";
 .focus-selected {
-  box-shadow: 0 0 0 4px #ffffff, 0 0 0 10px #FF00FF, 0 10px 40px rgba(0,0,0,0.8);
+  box-shadow: 0 0 0 4px rgba(255,255,255,0.7), 0 0 0 5px rgba(110, 39, 163, 0.71), 0 8px 24px rgba(0,0,0,0.5);
   z-index: 10;
+}
+.pill-image {
+  @apply px-1.5 py-px rounded-full text-[10px] font-medium leading-none border;
+  background: var(--color-media-image-bg);
+  color: var(--color-media-image);
+  border-color: color-mix(in srgb, var(--color-media-image) 20%, transparent);
+}
+.pill-video {
+  @apply px-1.5 py-px rounded-full text-[10px] font-medium leading-none border;
+  background: var(--color-media-video-bg);
+  color: var(--color-media-video);
+  border-color: color-mix(in srgb, var(--color-media-video) 20%, transparent);
+}
+.pill-workflow {
+  @apply px-1.5 py-px rounded-full text-[10px] font-medium leading-none border;
+  background: var(--color-workflow-bg);
+  color: var(--color-workflow);
+  border-color: color-mix(in srgb, var(--color-workflow) 20%, transparent);
 }
 </style>
