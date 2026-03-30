@@ -38,6 +38,11 @@ const positionLabel = computed(() => {
   return `${ui.lightboxIndex + 1} / ${fileCount.value}`
 })
 
+// --- Bind zoom container ref from media component ---
+watch(mediaRef, (comp) => {
+  zoom.containerEl.value = comp?.rootRef ?? null
+}, { immediate: true })
+
 // --- Reset zoom on file change ---
 watch(() => ui.lightboxIndex, () => {
   zoom.resetZoom()

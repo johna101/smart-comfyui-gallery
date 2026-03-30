@@ -30,7 +30,12 @@
       "Bash(kill %1)",
       "Bash(npx vue-tsc:*)",
       "WebFetch(domain:developers.figma.com)",
-      "Bash(yarn build:*)"
+      "Bash(yarn build:*)",
+      "Bash(git push:*)",
+      "Bash(python3 -c \":*)",
+      "Bash(python3 -c \"import PIL; print\\(PIL.__file__\\)\")",
+      "Bash(ls -d *env*)",
+      "WebSearch"
     ]
   }
 }

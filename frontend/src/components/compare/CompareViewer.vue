@@ -14,8 +14,12 @@ const emit = defineEmits<{ close: [] }>()
 // State
 const sliderPos = ref(50)
 const zoom = ref(1)
+const panX = ref(0)
+const panY = ref(0)
 const rotation = ref(0)
 const isDraggingHandle = ref(false)
+const isPanning = ref(false)
+const panStart = ref({ x: 0, y: 0, panX: 0, panY: 0 })
 const stageRef = ref<HTMLElement | null>(null)
 const showDiff = ref(true)
 const diffOnlyMode = ref(true)
@@ -38,7 +42,7 @@ const urlB = computed(() =>
 const isVideo = computed(() => props.fileA.type === 'video' || props.fileB.type === 'video')
 
 const transform = computed(() =>
-  `scale(${zoom.value}) rotate(${rotation.value}deg)`
+  `translate(${panX.value}px, ${panY.value}px) scale(${zoom.value}) rotate(${rotation.value}deg)`
 )
 
 const clipStyle = computed(() => ({
@@ -65,12 +69,17 @@ function onSliderMove(clientX: number) {
 }
 
 function onPointerDown(e: PointerEvent) {
-  // Only the slider handle area triggers drag
   const handle = (e.target as HTMLElement).closest('.cmp-handle-zone')
   if (handle) {
     isDraggingHandle.value = true
     stageRef.value?.setPointerCapture(e.pointerId)
     onSliderMove(e.clientX)
+    e.preventDefault()
+  } else if (zoom.value > 1) {
+    // Pan when zoomed in
+    isPanning.value = true
+    panStart.value = { x: e.clientX, y: e.clientY, panX: panX.value, panY: panY.value }
+    stageRef.value?.setPointerCapture(e.pointerId)
     e.preventDefault()
   }
 }
@@ -78,24 +87,35 @@ function onPointerDown(e: PointerEvent) {
 function onPointerMove(e: PointerEvent) {
   if (isDraggingHandle.value) {
     onSliderMove(e.clientX)
+  } else if (isPanning.value) {
+    panX.value = panStart.value.panX + (e.clientX - panStart.value.x)
+    panY.value = panStart.value.panY + (e.clientY - panStart.value.y)
   }
 }
 
 function onPointerUp() {
   isDraggingHandle.value = false
+  isPanning.value = false
 }
 
 function onWheel(e: WheelEvent) {
   e.preventDefault()
-  // All scroll/pinch = zoom (centered)
-  const delta = e.deltaY > 0 ? 0.9 : 1.1
-  zoom.value = Math.max(0.1, Math.min(10, zoom.value * delta))
+  const rect = stageRef.value!.getBoundingClientRect()
+  // Cursor position relative to stage center
+  const cx = e.clientX - rect.left - rect.width / 2
+  const cy = e.clientY - rect.top - rect.height / 2
+  const factor = e.deltaY > 0 ? 0.9 : 1.1
+  const newZoom = Math.max(0.1, Math.min(10, zoom.value * factor))
+  // Adjust pan so the point under the cursor stays fixed
+  panX.value = cx - (newZoom / zoom.value) * (cx - panX.value)
+  panY.value = cy - (newZoom / zoom.value) * (cy - panY.value)
+  zoom.value = newZoom
 }
 
 // Controls
 function zoomIn() { zoom.value = Math.min(10, zoom.value + 0.2) }
 function zoomOut() { zoom.value = Math.max(0.1, zoom.value - 0.2) }
-function resetView() { zoom.value = 1; rotation.value = 0 }
+function resetView() { zoom.value = 1; panX.value = 0; panY.value = 0; rotation.value = 0 }
 function rotate() { rotation.value = (rotation.value + 90) % 360 }
 
 // Keyboard
@@ -189,6 +209,7 @@ onUnmounted(() => {
     <div
       ref="stageRef"
       class="flex-1 relative overflow-hidden select-none"
+      :class="{ 'cursor-grab': zoom > 1 && !isPanning, 'cursor-grabbing': isPanning }"
       @pointerdown="onPointerDown"
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"

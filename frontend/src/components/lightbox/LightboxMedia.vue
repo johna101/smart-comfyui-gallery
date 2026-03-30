@@ -23,6 +23,7 @@ const gallery = useGalleryStore()
 const loading = ref(true)
 const error = ref(false)
 const videoRef = ref<HTMLVideoElement | null>(null)
+const rootRef = ref<HTMLElement | null>(null)
 
 const isVideo = computed(() => props.file?.type === 'video')
 const isAudio = computed(() => props.file?.type === 'audio')
@@ -69,11 +70,12 @@ onUnmounted(() => {
   }
 })
 
-defineExpose({ videoRef })
+defineExpose({ videoRef, rootRef })
 </script>
 
 <template>
   <div
+    ref="rootRef"
     class="relative flex items-center justify-center w-full h-full overflow-hidden select-none"
     :class="{ 'cursor-grab': !isDragging, 'cursor-grabbing': isDragging }"
     @mousedown="emit('dragStart', $event)"

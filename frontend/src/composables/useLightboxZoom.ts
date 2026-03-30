@@ -5,6 +5,7 @@ export function useLightboxZoom() {
   const translateX = ref(0)
   const translateY = ref(0)
   const panStep = ref(50)
+  const containerEl = ref<HTMLElement | null>(null)
 
   const transformStyle = computed(() =>
     `translate(${translateX.value}px, ${translateY.value}px) scale(${zoom.value})`
@@ -42,12 +43,21 @@ export function useLightboxZoom() {
     return panStep.value
   }
 
-  /** Mouse wheel zoom handler */
+  /** Mouse wheel zoom handler — zooms toward cursor position */
   function onWheel(e: WheelEvent) {
     e.preventDefault()
-    const amount = e.ctrlKey ? 0.2 : 0.1
-    if (e.deltaY < 0) zoomIn(amount)
-    else zoomOut(amount)
+    const el = containerEl.value
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    // Cursor position relative to container center
+    const cx = e.clientX - rect.left - rect.width / 2
+    const cy = e.clientY - rect.top - rect.height / 2
+    const factor = e.deltaY > 0 ? 0.9 : 1.1
+    const newZoom = Math.max(0.1, Math.min(10, zoom.value * factor))
+    // Adjust translate so the point under cursor stays fixed
+    translateX.value = cx - (newZoom / zoom.value) * (cx - translateX.value)
+    translateY.value = cy - (newZoom / zoom.value) * (cy - translateY.value)
+    zoom.value = newZoom
   }
 
   /** Mouse drag state for panning */
@@ -77,7 +87,7 @@ export function useLightboxZoom() {
   }
 
   return {
-    zoom, translateX, translateY, panStep,
+    zoom, translateX, translateY, panStep, containerEl,
     transformStyle, zoomPercent, isDragging,
     zoomIn, zoomOut, resetZoom, pan, panByStep, cyclePanStep,
     onWheel, onDragStart, onDragMove, onDragEnd,
