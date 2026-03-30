@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { GalleryFile } from '@/types/gallery'
 import { mediaApi } from '@/api/gallery'
+import { Scale, RotateCw, FileText, X } from 'lucide-vue-next'
 
 const props = defineProps<{
   fileA: GalleryFile
@@ -161,26 +162,26 @@ onUnmounted(() => {
   <div class="fixed inset-0 z-50 bg-black flex flex-col">
     <!-- Header -->
     <div class="flex items-center justify-between px-4 py-2 bg-black/80 border-b border-white/10 shrink-0">
-      <h3 class="text-white text-sm font-medium">⚖️ Compare</h3>
+      <h3 class="text-white text-sm font-medium flex items-center gap-1.5"><Scale :size="16" /> Compare</h3>
 
       <div class="flex items-center gap-2">
-        <button class="cmp-btn" @click="rotate" title="Rotate (R)">🔄</button>
+        <button class="cmp-btn" @click="rotate" title="Rotate (R)"><RotateCw :size="16" /></button>
         <div class="w-px h-5 bg-white/20" />
         <button class="cmp-btn" @click="zoomOut" title="Zoom Out (-)">−</button>
         <button class="cmp-btn" @click="zoomIn" title="Zoom In (+)">+</button>
         <button class="cmp-btn" @click="resetView" title="Reset (0)">Reset</button>
         <div class="w-px h-5 bg-white/20" />
         <button
-          class="cmp-btn"
+          class="cmp-btn flex items-center gap-1"
           :class="{ 'bg-blue-600/30': showDiff }"
           @click="showDiff = !showDiff"
           title="Parameter Diff (I)"
-        >📝 Diff{{ diffCount > 0 ? ` (${diffCount})` : '' }}</button>
+        ><FileText :size="16" /> Diff{{ diffCount > 0 ? ` (${diffCount})` : '' }}</button>
         <button
-          class="text-white/70 hover:text-white text-xl ml-2 cursor-pointer"
+          class="text-white/70 hover:text-white ml-2 cursor-pointer"
           @click="emit('close')"
           title="Close (Esc)"
-        >✕</button>
+        ><X :size="20" /></button>
       </div>
     </div>
 

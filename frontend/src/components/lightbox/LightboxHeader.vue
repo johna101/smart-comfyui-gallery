@@ -3,6 +3,11 @@ import { computed } from 'vue'
 import type { GalleryFile, FolderInfo } from '@/types/gallery'
 import { mediaApi } from '@/api/gallery'
 import { useGalleryStore } from '@/stores/gallery'
+import {
+  FolderOpen, ZoomIn, ZoomOut, Star, Download, Pencil, Trash2,
+  Settings, ClipboardList, Paperclip, ArrowDownToLine, ArrowUpFromLine,
+  Film, Eye, ExternalLink, EyeOff, X,
+} from 'lucide-vue-next'
 
 const props = defineProps<{
   file: GalleryFile | null
@@ -53,12 +58,12 @@ const folderBreadcrumbs = computed(() => {
 const resolution = computed(() => {
   if (!props.file) return ''
   const parts: string[] = []
-  if (props.file.dimensions) parts.push(`📐 ${props.file.dimensions}`)
+  if (props.file.dimensions) parts.push(props.file.dimensions)
   if (props.file.size) {
     const kb = props.file.size / 1024
     parts.push(kb > 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb.toFixed(1)} KB`)
   }
-  if (props.file.duration) parts.push(`⏱️ ${props.file.duration}`)
+  if (props.file.duration) parts.push(props.file.duration)
   return parts.join('  ·  ')
 })
 
@@ -86,7 +91,7 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
           <span class="text-white/50 text-sm ml-2">{{ zoomPercent }}%</span>
         </h2>
         <p class="text-white/60 text-sm truncate flex items-center gap-0.5">
-          <span class="mr-1">📂</span>
+          <FolderOpen :size="14" class="mr-1 shrink-0" />
           <template v-for="(crumb, i) in folderBreadcrumbs" :key="crumb.key">
             <span
               class="cursor-pointer hover:text-white/90 transition-colors"
@@ -98,11 +103,11 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
         </p>
       </div>
       <button
-        class="text-white/70 hover:text-white text-2xl ml-4 p-1"
+        class="text-white/70 hover:text-white ml-4 p-1"
         title="Close (Esc)"
         @click="emit('close')"
       >
-        ✕
+        <X :size="22" />
       </button>
     </div>
 
@@ -113,12 +118,12 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
         class="lb-btn"
         title="Zoom in (+)"
         @click="emit('zoomIn')"
-      >🔍+</button>
+      ><ZoomIn :size="18" /></button>
       <button
         class="lb-btn"
         title="Zoom out (-)"
         @click="emit('zoomOut')"
-      >🔍−</button>
+      ><ZoomOut :size="18" /></button>
 
       <div class="w-px h-6 bg-white/20 mx-1" />
 
@@ -128,7 +133,7 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
         :class="{ 'text-yellow-400': isFavorite }"
         :title="isFavorite ? 'Remove Favorite (F)' : 'Add Favorite (F)'"
         @click="emit('toggleFavorite')"
-      >{{ isFavorite ? '★' : '☆' }}</button>
+      ><Star :size="18" :class="{ 'fill-current': isFavorite }" /></button>
 
       <!-- Download -->
       <a
@@ -137,21 +142,21 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
         class="lb-btn inline-block"
         title="Download (S)"
         download
-      >💾</a>
+      ><Download :size="18" /></a>
 
       <!-- Rename -->
       <button
         class="lb-btn"
         title="Rename (R)"
         @click="emit('rename')"
-      >✏️</button>
+      ><Pencil :size="18" /></button>
 
       <!-- Delete -->
       <button
         class="lb-btn text-red-400 hover:text-red-300"
         title="Delete (D)"
         @click="emit('delete')"
-      >🗑️</button>
+      ><Trash2 :size="18" /></button>
 
       <div class="w-px h-6 bg-white/20 mx-1" />
 
@@ -162,17 +167,17 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
           class="lb-btn inline-block"
           title="Download Workflow (W)"
           download
-        >⚙️</a>
+        ><Settings :size="18" /></a>
         <button
           class="lb-btn"
           title="Node Summary (N)"
           @click="emit('nodeSummary')"
-        >📋</button>
+        ><ClipboardList :size="18" /></button>
         <button
           class="lb-btn"
           title="Copy Workflow (C)"
           @click="emit('copyWorkflow')"
-        >📎</button>
+        ><Paperclip :size="18" /></button>
       </template>
 
       <!-- Inject to ComfyUI -->
@@ -183,13 +188,13 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
           class="lb-btn text-cyan-400 hover:text-cyan-300"
           title="Send to ComfyUI Input (Q)"
           @click="emit('sendToInput')"
-        >📥</button>
+        ><ArrowDownToLine :size="18" /></button>
         <button
           v-if="gallery.hasWorkflowsPath && hasWorkflow"
           class="lb-btn text-green-400 hover:text-green-300"
           title="Send Workflow to ComfyUI (Shift+W)"
           @click="emit('sendWorkflow')"
-        >📤</button>
+        ><ArrowUpFromLine :size="18" /></button>
       </template>
 
       <!-- Storyboard -->
@@ -198,14 +203,14 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
         class="lb-btn"
         title="Storyboard (E)"
         @click="emit('storyboard')"
-      >🎞️</button>
+      ><Film :size="18" /></button>
 
       <!-- Info / Metadata panel -->
       <button
         class="lb-btn"
         title="File Info & Prompt (I)"
         @click="emit('toggleMeta')"
-      >👁️</button>
+      ><Eye :size="18" /></button>
 
       <div class="w-px h-6 bg-white/20 mx-1" />
 
@@ -216,14 +221,14 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
         target="_blank"
         class="lb-btn inline-block"
         title="Open in New Tab (O)"
-      >↗️</a>
+      ><ExternalLink :size="18" /></a>
 
       <!-- Toggle UI -->
       <button
         class="lb-btn"
         title="Toggle UI (H)"
         @click="emit('toggleUi')"
-      >👁️</button>
+      ><EyeOff :size="18" /></button>
     </div>
     </div>
   </div>

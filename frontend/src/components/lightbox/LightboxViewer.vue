@@ -7,6 +7,7 @@ import { useLightboxZoom } from '@/composables/useLightboxZoom'
 import { useLightboxKeys } from '@/composables/useLightboxKeys'
 import { useFolderNavigation } from '@/composables/useFolderNavigation'
 import { useToast } from '@/composables/useToast'
+import { Copy, X } from 'lucide-vue-next'
 import LightboxHeader from './LightboxHeader.vue'
 import LightboxMedia from './LightboxMedia.vue'
 import StoryboardViewer from '@/components/storyboard/StoryboardViewer.vue'
@@ -96,7 +97,7 @@ async function toggleFavorite() {
   try {
     const res = await fileApi.toggleFavorite(file.id)
     file.is_favorite = res.is_favorite ? 1 : 0
-    toast.show(res.is_favorite ? '★ Favorited' : '☆ Unfavorited')
+    toast.show(res.is_favorite ? 'Favorited' : 'Unfavorited')
   } catch {
     toast.show('Failed to toggle favorite')
   }
@@ -322,9 +323,9 @@ useLightboxKeys({
                 <div class="flex items-center justify-between">
                   <h3 class="text-white font-medium">File Info</h3>
                   <button
-                    class="text-white/40 hover:text-white text-lg cursor-pointer"
+                    class="text-white/40 hover:text-white cursor-pointer"
                     @click="showMeta = false"
-                  >✕</button>
+                  ><X :size="18" /></button>
                 </div>
 
                 <!-- Basic info -->
@@ -344,7 +345,7 @@ useLightboxKeys({
                       class="text-white/30 hover:text-white text-xs cursor-pointer"
                       title="Copy prompt"
                       @click="copyToClipboard(currentFile.workflow_prompt)"
-                    >📋</button>
+                    ><Copy :size="12" /></button>
                   </div>
                   <div class="text-white/80 text-xs leading-relaxed whitespace-pre-wrap bg-white/5 rounded-lg p-3 max-h-[40vh] overflow-y-auto">
                     {{ currentFile.workflow_prompt }}
@@ -359,7 +360,7 @@ useLightboxKeys({
                       class="text-white/30 hover:text-white text-xs cursor-pointer"
                       title="Copy all"
                       @click="copyToClipboard(currentFile.workflow_files.replaceAll(' ||| ', '\n'))"
-                    >📋</button>
+                    ><Copy :size="12" /></button>
                   </div>
                   <div class="bg-white/5 rounded-lg p-2 max-h-[30vh] overflow-y-auto space-y-0.5">
                     <div
@@ -372,7 +373,7 @@ useLightboxKeys({
                         class="text-white/20 hover:text-white text-xs shrink-0 opacity-0 group-hover/wf:opacity-100 transition-opacity cursor-pointer"
                         title="Copy"
                         @click="copyToClipboard(item)"
-                      >📋</button>
+                      ><Copy :size="12" /></button>
                     </div>
                   </div>
                 </div>

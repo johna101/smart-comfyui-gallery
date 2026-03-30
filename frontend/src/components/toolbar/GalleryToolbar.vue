@@ -4,6 +4,10 @@ import { useGalleryStore } from '@/stores/gallery'
 import { usePreferencesStore } from '@/stores/preferences'
 import { useFilterStore } from '@/stores/filters'
 import { useFolderNavigation } from '@/composables/useFolderNavigation'
+import {
+  Search, Upload, Loader, RefreshCcw, RefreshCw, FolderOpen,
+  CheckSquare, Square, Calendar, ArrowDownAZ, Zap,
+} from 'lucide-vue-next'
 import FilterPanel from './FilterPanel.vue'
 import RescanProgress from './RescanProgress.vue'
 
@@ -97,9 +101,9 @@ const fileCountLabel = computed(() => {
   const filtered = gallery.filteredCount
 
   if (filters.activeCount > 0) {
-    return `📂 ${filtered} of ${total} files`
+    return `${filtered} of ${total} files`
   }
-  return `📂 ${total} File${total !== 1 ? 's' : ''}`
+  return `${total} File${total !== 1 ? 's' : ''}`
 })
 </script>
 
@@ -136,7 +140,7 @@ const fileCountLabel = computed(() => {
           title="Focus Mode (F)"
           @click="preferences.toggleFocusMode()"
         >
-          ⚡ Focus
+          <Zap :size="14" /> Focus
           <span
             class="text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-1"
             :class="preferences.focusMode
@@ -157,7 +161,7 @@ const fileCountLabel = computed(() => {
         :class="{ 'toolbar-btn-active': showFilters || filters.activeCount > 0 }"
         @click="showFilters = !showFilters"
       >
-        🔍 Filters
+        <Search :size="14" /> Filters
         <span v-if="filters.activeCount > 0" class="text-xs ml-1">
           ({{ filters.activeCount }})
           <span
@@ -171,7 +175,7 @@ const fileCountLabel = computed(() => {
       <!-- Upload / Rescan / Refresh -->
       <div class="flex items-center gap-2 ml-4">
         <button class="toolbar-btn" @click="uploadInput?.click()" :disabled="uploading">
-          {{ uploading ? '⏳' : '📤' }} Upload
+          <Loader v-if="uploading" :size="14" class="animate-spin" /><Upload v-else :size="14" /> Upload
         </button>
         <input
           ref="uploadInput"
@@ -183,11 +187,11 @@ const fileCountLabel = computed(() => {
         />
 
         <button class="toolbar-btn" @click="startRescan()" :disabled="!!rescanJobId">
-          ♻️ Rescan
+          <RefreshCcw :size="14" /> Rescan
         </button>
 
         <button class="toolbar-btn" @click="refreshFolder">
-          🔃 Refresh
+          <RefreshCw :size="14" /> Refresh
         </button>
       </div>
 
@@ -195,11 +199,12 @@ const fileCountLabel = computed(() => {
       <div class="flex-1" />
 
       <!-- File count -->
-      <span class="text-sm text-white/60 whitespace-nowrap">{{ fileCountLabel }}</span>
+      <span class="text-sm text-white/60 whitespace-nowrap flex items-center gap-1"><FolderOpen :size="14" /> {{ fileCountLabel }}</span>
 
       <!-- Select All -->
       <button class="toolbar-btn" @click="gallery.hasSelection ? gallery.clearSelection() : gallery.selectAll()">
-        {{ gallery.hasSelection ? '☐ Deselect' : '✅ Select All' }}
+        <template v-if="gallery.hasSelection"><Square :size="14" /> Deselect</template>
+        <template v-else><CheckSquare :size="14" /> Select All</template>
       </button>
 
       <!-- Sort -->
@@ -209,14 +214,14 @@ const fileCountLabel = computed(() => {
           :class="{ 'toolbar-btn-active': sortBy === 'date' }"
           @click="toggleSort('date')"
         >
-          📅 Date {{ sortBy === 'date' ? (sortOrder === 'asc' ? '↑' : '↓') : '' }}
+          <Calendar :size="14" /> Date {{ sortBy === 'date' ? (sortOrder === 'asc' ? '↑' : '↓') : '' }}
         </button>
         <button
           class="toolbar-btn text-xs"
           :class="{ 'toolbar-btn-active': sortBy === 'name' }"
           @click="toggleSort('name')"
         >
-          🔤 Name {{ sortBy === 'name' ? (sortOrder === 'asc' ? '↑' : '↓') : '' }}
+          <ArrowDownAZ :size="14" /> Name {{ sortBy === 'name' ? (sortOrder === 'asc' ? '↑' : '↓') : '' }}
         </button>
       </div>
     </div>

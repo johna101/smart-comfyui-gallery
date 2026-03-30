@@ -2,6 +2,10 @@
 import { onMounted, onUnmounted, watch } from 'vue'
 import { useGalleryStore } from '@/stores/gallery'
 import { useFilterStore } from '@/stores/filters'
+import {
+  FolderOpen, Globe, FolderTree, Search, Settings, Palette,
+  FileText, Tag, Calendar, Star, StarOff, Ban, Trash2,
+} from 'lucide-vue-next'
 
 const emit = defineEmits<{
   close: []
@@ -53,25 +57,25 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
             :class="{ active: filters.scope === 'local' }"
           >
             <input type="radio" v-model="filters.scope" value="local" class="hidden" />
-            📂 Current Folder
+            <FolderOpen :size="12" /> Current Folder
           </label>
           <label
             class="scope-option"
             :class="{ active: filters.scope === 'global' }"
           >
             <input type="radio" v-model="filters.scope" value="global" class="hidden" />
-            🌐 Global
+            <Globe :size="12" /> Global
           </label>
         </div>
         <label class="flex items-center gap-2 mt-2 text-xs text-white/50 cursor-pointer">
           <input type="checkbox" v-model="filters.recursive" class="accent-green-500" />
-          📂 Include Subfolders
+          <FolderTree :size="12" /> Include Subfolders
         </label>
       </div>
 
       <!-- Search by Name -->
       <div class="filter-group">
-        <label class="filter-label">🔍 Search by Name</label>
+        <label class="filter-label"><Search :size="12" class="inline-block" /> Search by Name</label>
         <input
           v-model="filters.search"
           type="text"
@@ -82,7 +86,7 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
 
       <!-- Workflow Files -->
       <div class="filter-group">
-        <label class="filter-label">⚙️ Workflow Files</label>
+        <label class="filter-label"><Settings :size="12" class="inline-block" /> Workflow Files</label>
         <input
           v-model="filters.workflowFiles"
           type="text"
@@ -93,7 +97,7 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
 
       <!-- Prompt Keywords -->
       <div class="filter-group">
-        <label class="filter-label">🎨 Prompt Keywords</label>
+        <label class="filter-label"><Palette :size="12" class="inline-block" /> Prompt Keywords</label>
         <input
           v-model="filters.workflowPrompt"
           type="text"
@@ -104,7 +108,7 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
 
       <!-- Extensions -->
       <div class="filter-group" v-if="gallery.availableExtensions.length">
-        <label class="filter-label">📄 Extensions</label>
+        <label class="filter-label"><FileText :size="12" class="inline-block" /> Extensions</label>
         <div class="flex flex-wrap gap-1">
           <button
             v-for="ext in gallery.availableExtensions"
@@ -120,7 +124,7 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
 
       <!-- Prefixes -->
       <div class="filter-group" v-if="gallery.availablePrefixes.length">
-        <label class="filter-label">🏷️ Prefixes</label>
+        <label class="filter-label"><Tag :size="12" class="inline-block" /> Prefixes</label>
         <div class="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
           <button
             v-for="prefix in gallery.availablePrefixes"
@@ -136,7 +140,7 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
 
       <!-- Date Range -->
       <div class="filter-group">
-        <label class="filter-label">📅 Date Range</label>
+        <label class="filter-label"><Calendar :size="12" class="inline-block" /> Date Range</label>
         <div class="flex flex-col gap-1.5">
           <div>
             <label class="text-[10px] text-white/40">From:</label>
@@ -154,15 +158,15 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
         <label class="filter-label">Options</label>
         <label class="filter-checkbox">
           <input type="checkbox" v-model="filters.showFavorites" class="accent-yellow-400" />
-          ⭐ Favorites Only
+          <Star :size="12" /> Favorites Only
         </label>
         <label class="filter-checkbox">
           <input type="checkbox" v-model="filters.hideFavorites" class="accent-yellow-400" />
-          ⭐ Hide Favorites
+          <StarOff :size="12" /> Hide Favorites
         </label>
         <label class="filter-checkbox">
           <input type="checkbox" v-model="filters.noWorkflow" class="accent-red-400" />
-          🚫 No Workflow
+          <Ban :size="12" /> No Workflow
         </label>
       </div>
 
@@ -172,7 +176,7 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
           {{ gallery.filteredCount }} of {{ gallery.files.length }} files
         </div>
         <button class="toolbar-btn-reset" @click="filters.reset()">
-          🗑️ Reset All
+          <Trash2 :size="14" /> Reset All
         </button>
       </div>
     </div>

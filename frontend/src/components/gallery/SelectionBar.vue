@@ -3,6 +3,10 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useGalleryStore } from '@/stores/gallery'
 import { batchApi } from '@/api/gallery'
 import { useFolderNavigation } from '@/composables/useFolderNavigation'
+import {
+  Scale, Star, Trash2, MoreVertical, X, Copy, FolderInput,
+  Archive, StarOff, CheckSquare, Square,
+} from 'lucide-vue-next'
 import CompareViewer from '@/components/compare/CompareViewer.vue'
 import FolderPickerDialog from '@/components/ui/FolderPickerDialog.vue'
 
@@ -158,10 +162,10 @@ onUnmounted(() => document.removeEventListener('click', closeMore))
         <!-- Left: count + deselect -->
         <div class="flex items-center gap-3">
           <button
-            class="text-neutral-400 hover:text-white text-xl"
+            class="text-neutral-400 hover:text-white"
             title="Deselect all"
             @click="gallery.clearSelection()"
-          >&#10005;</button>
+          ><X :size="20" /></button>
           <span class="text-white text-sm font-medium">
             {{ gallery.selectedCount }} file{{ gallery.selectedCount !== 1 ? 's' : '' }} selected
           </span>
@@ -175,26 +179,26 @@ onUnmounted(() => document.removeEventListener('click', closeMore))
             class="sel-btn text-blue-400"
             title="Compare selected images"
             @click="showCompare = true"
-          >⚖️</button>
+          ><Scale :size="20" /></button>
 
           <button
             class="sel-btn text-yellow-400"
             title="Favorite selected"
             @click="favoriteSelected"
-          >&#9733;</button>
+          ><Star :size="20" class="fill-current" /></button>
 
           <button
             class="sel-btn text-red-400"
             title="Delete selected"
             @click="deleteSelected"
-          >&#128465;</button>
+          ><Trash2 :size="20" /></button>
 
           <!-- More menu -->
           <button
             class="sel-btn text-white border border-neutral-600 rounded-lg px-3"
             title="More actions"
             @click.stop="showMore = !showMore"
-          >&#8942;</button>
+          ><MoreVertical :size="20" /></button>
 
           <!-- Dropdown -->
           <div
@@ -207,26 +211,26 @@ onUnmounted(() => document.removeEventListener('click', closeMore))
               class="more-item"
               @click="showCompare = true; showMore = false"
             >
-              <span>⚖️</span> Compare
+              <Scale :size="16" /> Compare
             </button>
             <button class="more-item" @click="copySelected">
-              <span>Cc</span> Copy to Folder...
+              <Copy :size="16" /> Copy to Folder...
             </button>
             <button class="more-item" @click="moveSelected">
-              <span>&#128193;</span> Move to Folder...
+              <FolderInput :size="16" /> Move to Folder...
             </button>
             <button class="more-item" @click="downloadZip">
-              <span>&#128230;</span> Download as Zip
+              <Archive :size="16" /> Download as Zip
             </button>
             <button class="more-item" @click="unfavoriteSelected">
-              <span>&#9734;</span> Remove Favorite
+              <StarOff :size="16" /> Remove Favorite
             </button>
             <hr class="border-neutral-700" />
             <button class="more-item" @click="gallery.selectAll(); showMore = false">
-              <span>&#9745;</span> Select All Files
+              <CheckSquare :size="16" /> Select All Files
             </button>
             <button class="more-item" @click="gallery.clearSelection(); showMore = false">
-              <span>&#9744;</span> Deselect All Files
+              <Square :size="16" /> Deselect All Files
             </button>
           </div>
         </div>
@@ -244,7 +248,7 @@ onUnmounted(() => document.removeEventListener('click', closeMore))
     <!-- Move to folder dialog -->
     <FolderPickerDialog
       v-if="showMoveDialog"
-      title="&#10132; Move Files to Folder"
+      title="Move Files to Folder"
       @select="handleMoveConfirm"
       @close="showMoveDialog = false"
     />
@@ -252,7 +256,7 @@ onUnmounted(() => document.removeEventListener('click', closeMore))
     <!-- Copy to folder dialog -->
     <FolderPickerDialog
       v-if="showCopyDialog"
-      title="&#128203; Copy Files to Folder"
+      title="Copy Files to Folder"
       @select="handleCopyConfirm"
       @close="showCopyDialog = false"
     />

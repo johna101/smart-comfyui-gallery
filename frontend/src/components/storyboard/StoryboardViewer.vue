@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import type { GalleryFile } from '@/types/gallery'
 import { mediaApi } from '@/api/gallery'
+import { Film, Loader, Download, X } from 'lucide-vue-next'
 
 const props = defineProps<{
   file: GalleryFile
@@ -192,13 +193,13 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
     <!-- Header -->
     <div class="flex items-center justify-between px-4 py-2 bg-black/80 border-b border-white/10 shrink-0">
       <h3 class="text-white text-sm font-medium">
-        🎞️ Storyboard — {{ file.name }}
+        <Film :size="16" class="inline-block" /> Storyboard — {{ file.name }}
       </h3>
       <button
-        class="text-white/70 hover:text-white text-xl cursor-pointer"
+        class="text-white/70 hover:text-white cursor-pointer"
         @click="emit('close')"
         title="Close (Esc)"
-      >✕</button>
+      ><X :size="20" /></button>
     </div>
 
     <!-- Content -->
@@ -255,7 +256,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
           @click="toggleHd"
         >
           HD {{ hdMode ? 'ON' : 'OFF' }}
-          <span v-if="hiresLoading" class="ml-1 animate-pulse">⏳</span>
+          <Loader v-if="hiresLoading" :size="12" class="ml-1 animate-spin" />
         </button>
         <button
           class="text-xs px-2 py-0.5 rounded border cursor-pointer transition-colors
@@ -263,13 +264,13 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
           @click="downloadFrame"
           title="Download this frame as PNG"
         >
-          💾 Save
+          <Download :size="14" /> Save
         </button>
         <div class="flex-1" />
         <button
-          class="text-white/40 hover:text-white text-lg cursor-pointer"
+          class="text-white/40 hover:text-white cursor-pointer"
           @click="closeZoom"
-        >✕</button>
+        ><X :size="18" /></button>
       </div>
 
       <!-- Navigation -->

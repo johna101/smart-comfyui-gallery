@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { folderApi } from '@/api/gallery'
+import { RefreshCcw } from 'lucide-vue-next'
 
 const props = defineProps<{
   jobId: string
@@ -57,7 +58,7 @@ onUnmounted(stopPolling)
       />
     </div>
     <span class="text-xs text-white/50 whitespace-nowrap">
-      ♻️ Rescanning {{ current }}/{{ total }}
+      <RefreshCcw :size="12" class="inline-block animate-spin" /> Rescanning {{ current }}/{{ total }}
     </span>
   </div>
 </template>

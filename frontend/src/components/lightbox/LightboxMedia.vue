@@ -3,6 +3,7 @@ import { ref, watch, onUnmounted, computed } from 'vue'
 import type { GalleryFile } from '@/types/gallery'
 import { mediaApi } from '@/api/gallery'
 import { useGalleryStore } from '@/stores/gallery'
+import { AlertTriangle, Music } from 'lucide-vue-next'
 
 const props = defineProps<{
   file: GalleryFile | null
@@ -94,7 +95,7 @@ defineExpose({ videoRef })
       v-if="error"
       class="text-red-400 text-center p-8"
     >
-      <p class="text-4xl mb-2">⚠️</p>
+      <AlertTriangle :size="48" class="mb-2" />
       <p>Error loading media</p>
     </div>
 
@@ -129,7 +130,7 @@ defineExpose({ videoRef })
       v-else-if="file && isAudio"
       class="flex flex-col items-center gap-6 p-8"
     >
-      <div class="text-8xl">🎵</div>
+      <Music :size="96" class="text-white/60" />
       <audio
         :src="mediaApi.fileUrl(file.id)"
         controls
