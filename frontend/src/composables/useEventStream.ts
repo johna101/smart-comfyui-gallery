@@ -24,13 +24,17 @@ export function useScanProgress() {
 export function useEventStream() {
   let eventSource: EventSource | null = null
   let refetchTimer: ReturnType<typeof setTimeout> | null = null
+  let pendingForceRefresh = false
   const gallery = useGalleryStore()
 
-  /** Debounced loadFolder to coalesce rapid SSE events */
+  /** Debounced loadFolder to coalesce rapid SSE events.
+   *  force_refresh is sticky — once set true in a debounce window it stays true. */
   function debouncedRefetch(forceRefresh = false, delayMs = 300) {
+    if (forceRefresh) pendingForceRefresh = true
     if (refetchTimer) clearTimeout(refetchTimer)
     refetchTimer = setTimeout(() => {
-      const params = forceRefresh ? { force_refresh: 'true' } : undefined
+      const params = pendingForceRefresh ? { force_refresh: 'true' } : undefined
+      pendingForceRefresh = false
       gallery.loadFolder(gallery.currentFolderKey, params)
       refetchTimer = null
     }, delayMs)
@@ -130,8 +134,10 @@ export function useEventStream() {
 
     eventSource.addEventListener('files_detected', (e) => {
       const data = JSON.parse(e.data)
-      if (isFolderRelevant(data.folder_key)) {
-        debouncedRefetch()
+      const folderKnown = !!gallery.folders[data.folder_key]
+      // Unknown folder = new folder created by ComfyUI; force_refresh to pull in the folder tree
+      if (!folderKnown || isFolderRelevant(data.folder_key)) {
+        debouncedRefetch(!folderKnown)
       }
     })
 

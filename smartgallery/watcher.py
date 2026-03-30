@@ -231,13 +231,45 @@ class SmartGalleryHandler(FileSystemEventHandler):
             logger.info("Watcher: moved %s → %s", os.path.basename(src_path), os.path.basename(dest_path))
 
     def _handle_folder_created(self, folder_path):
-        """New folder detected — refresh folder config and notify clients."""
+        """New folder detected — refresh folder config, scan for existing files, notify clients.
+
+        On Linux (inotify), there is a race window between directory creation and the
+        recursive watch being established. Files written into the new folder during that
+        window are never seen by on_created. Scanning the directory here catches them.
+        """
         from smartgallery.folders import get_dynamic_folder_config
         get_dynamic_folder_config(force_refresh=True)
+
+        # Scan the new folder for files already present (inotify race window fix)
+        found_file_ids = []
+        try:
+            for name in os.listdir(folder_path):
+                filepath = os.path.join(folder_path, name)
+                if not os.path.isfile(filepath):
+                    continue
+                if _should_ignore(filepath) or not _is_valid_media(filepath):
+                    continue
+                file_id = _process_and_upsert(filepath)
+                if file_id:
+                    found_file_ids.append((file_id, filepath))
+                    logger.info("Watcher: caught missed file in new folder: %s", name)
+        except OSError as e:
+            logger.warning("Watcher: could not scan new folder %s: %s", folder_path, e)
+
         publish_event("folder_created", {
             "folder_name": os.path.basename(folder_path),
         }, source="watcher")
-        logger.info("Watcher: new folder %s", os.path.basename(folder_path))
+
+        # Publish file events for any files caught in the scan
+        for file_id, filepath in found_file_ids:
+            from smartgallery.utils import folder_key_from_filepath
+            publish_event("files_detected", {
+                "folder_key": folder_key_from_filepath(filepath),
+                "file_id": file_id,
+                "filename": os.path.basename(filepath),
+            }, source="watcher")
+
+        logger.info("Watcher: new folder %s (%d file(s) found)", os.path.basename(folder_path), len(found_file_ids))
 
     def _handle_folder_changed(self):
         """Folder deleted, moved, or renamed externally — refresh tree and notify."""
