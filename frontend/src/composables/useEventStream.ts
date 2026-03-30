@@ -40,8 +40,15 @@ export function useEventStream() {
   function isFolderRelevant(folderKey: string): boolean {
     if (!folderKey) return false
     if (folderKey === gallery.currentFolderKey) return true
-    // In recursive mode, changes to child folders are relevant
-    if (gallery.isRecursive && gallery.ancestorKeys.includes(folderKey)) return true
+    // In recursive mode, check if the event folder is a descendant of the current folder
+    // by walking up its parent chain until we hit currentFolderKey or the root
+    if (gallery.isRecursive) {
+      let curr = gallery.folders[folderKey]?.parent ?? null
+      while (curr) {
+        if (curr === gallery.currentFolderKey) return true
+        curr = gallery.folders[curr]?.parent ?? null
+      }
+    }
     return false
   }
 
