@@ -129,11 +129,13 @@ class SmartGalleryHandler(FileSystemEventHandler):
         if event.is_directory:
             # New folder — refresh folder tree
             if not _should_ignore(event.src_path):
+                print(f"[Watcher] Dir created: {event.src_path}")
                 self._debounce(event.src_path, lambda: self._handle_folder_created(event.src_path))
             return
         path = event.src_path
         if _should_ignore(path) or not _is_valid_media(path):
             return
+        print(f"[Watcher] File created: {os.path.basename(path)}")
         self._debounce(path, lambda p=path: self._handle_file_created(p))
 
     def on_deleted(self, event):
@@ -230,18 +232,17 @@ class SmartGalleryHandler(FileSystemEventHandler):
             }, source="watcher")
             logger.info("Watcher: moved %s → %s", os.path.basename(src_path), os.path.basename(dest_path))
 
-    def _handle_folder_created(self, folder_path):
-        """New folder detected — refresh folder config, scan for existing files, notify clients.
+    def _scan_new_folder(self, folder_path):
+        """Scan a newly created folder for media files not yet in the DB.
 
-        On Linux (inotify), there is a race window between directory creation and the
-        recursive watch being established. Files written into the new folder during that
-        window are never seen by on_created. Scanning the directory here catches them.
+        Called immediately on folder detection and again at intervals to catch files
+        written after the initial scan (e.g. ComfyUI generation takes 10-60+ seconds).
+        Returns the number of new files inserted.
         """
-        from smartgallery.folders import get_dynamic_folder_config
-        get_dynamic_folder_config(force_refresh=True)
+        if not os.path.isdir(folder_path):
+            return 0
 
-        # Scan the new folder for files already present (inotify race window fix)
-        found_file_ids = []
+        inserted = 0
         try:
             for name in os.listdir(folder_path):
                 filepath = os.path.join(folder_path, name)
@@ -249,27 +250,65 @@ class SmartGalleryHandler(FileSystemEventHandler):
                     continue
                 if _should_ignore(filepath) or not _is_valid_media(filepath):
                     continue
-                file_id = _process_and_upsert(filepath)
-                if file_id:
-                    found_file_ids.append((file_id, filepath))
-                    logger.info("Watcher: caught missed file in new folder: %s", name)
+                # Skip if already in DB
+                file_id = hashlib.md5(filepath.encode()).hexdigest()
+                try:
+                    with get_db_connection() as conn:
+                        if conn.execute(FILES_EXISTS_BY_ID, (file_id,)).fetchone():
+                            continue
+                except Exception:
+                    pass
+                new_id = _process_and_upsert(filepath)
+                if new_id:
+                    publish_event("files_detected", {
+                        "folder_key": folder_key_from_filepath(filepath),
+                        "file_id": new_id,
+                        "filename": name,
+                    }, source="watcher")
+                    logger.info("Watcher: new file in new folder: %s", name)
+                    inserted += 1
         except OSError as e:
-            logger.warning("Watcher: could not scan new folder %s: %s", folder_path, e)
+            logger.warning("Watcher: could not scan folder %s: %s", folder_path, e)
 
+        return inserted
+
+    def _handle_folder_created(self, folder_path):
+        """New folder detected — refresh folder config, notify clients, poll for files.
+
+        Watchdog events for files inside a newly-created directory are unreliable:
+        on Linux/inotify the recursive watch races with the file being written; on
+        macOS FSEvents can coalesce or drop events in rapid sequences. Rather than
+        relying solely on on_created for those files, we scan the new folder at
+        increasing intervals until no new files appear. This covers the full range
+        of ComfyUI generation times (seconds to minutes).
+        """
+        from smartgallery.folders import get_dynamic_folder_config
+        get_dynamic_folder_config(force_refresh=True)
+
+        # Publish folder event immediately so the sidebar updates
         publish_event("folder_created", {
             "folder_name": os.path.basename(folder_path),
         }, source="watcher")
+        logger.info("Watcher: new folder detected: %s", os.path.basename(folder_path))
 
-        # Publish file events for any files caught in the scan
-        for file_id, filepath in found_file_ids:
-            from smartgallery.utils import folder_key_from_filepath
-            publish_event("files_detected", {
-                "folder_key": folder_key_from_filepath(filepath),
-                "file_id": file_id,
-                "filename": os.path.basename(filepath),
-            }, source="watcher")
+        # Initial scan — catches files already present (fast generations)
+        self._scan_new_folder(folder_path)
 
-        logger.info("Watcher: new folder %s (%d file(s) found)", os.path.basename(folder_path), len(found_file_ids))
+        # Follow-up scans at increasing intervals — covers slower generations.
+        # Stops early if folder disappears. Scans are cheap (DB check before processing).
+        def poll(attempt, delays):
+            if not os.path.isdir(folder_path):
+                return
+            self._scan_new_folder(folder_path)
+            if delays:
+                t = threading.Timer(delays[0], poll, args=[attempt + 1, delays[1:]])
+                t.daemon = True
+                t.start()
+
+        delays = [5.0, 15.0, 45.0, 120.0]
+        t = threading.Timer(delays[0], poll, args=[1, delays[1:]])
+        t.daemon = True
+        t.start()
 
     def _handle_folder_changed(self):
         """Folder deleted, moved, or renamed externally — refresh tree and notify."""
