@@ -9,7 +9,28 @@
       "Bash(python -c \"from smartgallery import config; from smartgallery import queries; from smartgallery.routes import ALL_BLUEPRINTS; print\\(f''OK: {len\\(ALL_BLUEPRINTS\\)} blueprints, schema v{config.DB_SCHEMA_VERSION}''\\)\")",
       "Bash(python -m py_compile smartgallery/config.py)",
       "Bash(python -m py_compile smartgallery/queries.py)",
-      "Bash(python -m py_compile smartgallery/models.py)"
+      "Bash(python -m py_compile smartgallery/models.py)",
+      "Bash(rm /Users/john/dev/smart-comfyui-gallery/.git/index.lock)",
+      "Bash(git -C /Users/john/dev/smart-comfyui-gallery add smartgallery/watcher.py smartgallery/config.py frontend/src/composables/useEventStream.ts static/dist/)",
+      "Bash(git -C /Users/john/dev/smart-comfyui-gallery status)",
+      "Bash(git -C:*)",
+      "Bash(source venv/bin/activate)",
+      "Bash(pip show:*)",
+      "Bash(source /Users/john/dev/smart-comfyui-gallery/venv/bin/activate)",
+      "Bash(find /Users/john/dev/smart-comfyui-gallery -name *.dist-info -type d)",
+      "Bash(python3 -c \"import watchdog; print\\(watchdog.__version__\\)\")",
+      "Bash(python3 -m pip show watchdog)",
+      "Bash(pip3 show:*)",
+      "Bash(python3 -c \"from watchdog.events import FileClosedEvent; print\\(''''on_closed supported''''\\)\")",
+      "Bash(npm view:*)",
+      "Bash(npm install:*)",
+      "Bash(rm -f package-lock.json)",
+      "Bash(yarn install:*)",
+      "Bash(kill %2)",
+      "Bash(kill %1)",
+      "Bash(npx vue-tsc:*)",
+      "WebFetch(domain:developers.figma.com)",
+      "Bash(yarn build:*)"
     ]
   }
 }

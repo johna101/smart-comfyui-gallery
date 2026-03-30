@@ -13,7 +13,7 @@ Forked for personal use and active refactoring. Not intended for upstream contri
 - **Template:** Minimal Jinja2 shell (`templates/index.html`) — just CSS variables, `#vue-app` mount, `__GALLERY_DATA__` injection
 - **Database:** SQLite3, schema version 27 with auto-migrations, indexed on path/mtime/name
 - **Entry point:** `run.py`
-- **Production build:** `cd frontend && npm run build` outputs to `static/dist/`, Flask serves via manifest
+- **Production build:** `cd frontend && yarn build` outputs to `static/dist/`, Flask serves via manifest
 
 ### Backend Package (`smartgallery/`)
 - `__init__.py` — Flask app factory, registers all blueprints, production asset loader
@@ -114,17 +114,22 @@ On first run with no config, the app prints a helpful message and exits. Create 
 For Vue frontend development (alongside Flask):
 ```bash
 cd frontend
-npm install
-npm run dev
+yarn install
+yarn dev
 ```
 Then set `FLASK_DEBUG=true` — Flask auto-reloads and injects Vite dev server script.
 
 ### Production Deployment
 ```bash
-cd frontend && npm install && npm run build
+cd frontend && yarn install && yarn build
 cd .. && python run.py
 ```
 Built assets in `static/dist/` are served via Vite manifest. No Vite dev server needed.
+
+### Workflow: "commit" vs "build"
+- **"commit"** — Stage changed files, write a descriptive commit message. Do NOT build frontend or push. Used during dev work with Vite dev server running.
+- **"build"** — Full release cycle: bump `APP_VERSION` in `smartgallery/config.py` by 0.01, run `cd frontend && yarn build`, commit everything (source + built assets), then push to origin. Commit message should be `v{version} — {summary}`.
+- **Version** lives in `smartgallery/config.py` as `APP_VERSION`. Bump by 0.01 each build.
 
 ### Configuration System
 Config resolution order (highest priority wins):

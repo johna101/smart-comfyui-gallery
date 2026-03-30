@@ -5,7 +5,7 @@ import { mediaApi } from '@/api/gallery'
 import { useGalleryStore } from '@/stores/gallery'
 import {
   FolderOpen, ZoomIn, ZoomOut, Star, Download, Pencil, Trash2,
-  ClipboardList, ClipboardCopy, ArrowDownToLine, ArrowUpFromLine,
+  ClipboardCopy, ArrowUpFromLine,
   Film, Eye, ExternalLink, EyeOff, X,
 } from 'lucide-vue-next'
 
