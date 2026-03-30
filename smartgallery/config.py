@@ -163,8 +163,8 @@ DATABASE_FILENAME = 'gallery_cache.sqlite'
 ZIP_CACHE_FOLDER_NAME = '.zip_downloads'
 
 # --- APP INFO ---
-APP_VERSION = "0.13"
-APP_VERSION_DATE = "March 30, 2026"
+APP_VERSION = "0.14"
+APP_VERSION_DATE = "March 31, 2026"
 GITHUB_REPO_URL = "https://github.com/biagiomaf/smart-comfyui-gallery"
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/biagiomaf/smart-comfyui-gallery/main/smartgallery.py"
 
@@ -180,7 +180,7 @@ def key_to_path(key):
     except Exception: return None
 
 # --- DERIVED SETTINGS ---
-DB_SCHEMA_VERSION = 28
+DB_SCHEMA_VERSION = 29
 THUMBNAIL_CACHE_DIR = os.path.join(BASE_SMARTGALLERY_PATH, THUMBNAIL_CACHE_FOLDER_NAME)
 SQLITE_CACHE_DIR = os.path.join(BASE_SMARTGALLERY_PATH, SQLITE_CACHE_FOLDER_NAME)
 DATABASE_FILE = os.path.join(SQLITE_CACHE_DIR, DATABASE_FILENAME)

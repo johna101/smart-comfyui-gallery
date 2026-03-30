@@ -92,7 +92,8 @@ def init_db(conn=None):
             'size': 'INTEGER DEFAULT 0',
             'last_scanned': 'REAL DEFAULT 0',
             'workflow_files': "TEXT DEFAULT ''",
-            'workflow_prompt': "TEXT DEFAULT ''"
+            'workflow_prompt': "TEXT DEFAULT ''",
+            'civitai_resources': "TEXT DEFAULT ''"
         }
 
         cursor = conn.execute("PRAGMA table_info(files)")
@@ -113,6 +114,9 @@ def init_db(conn=None):
 
             if current_ver != DB_SCHEMA_VERSION:
                 print(f"INFO: Updating Database Schema Version: {current_ver} -> {DB_SCHEMA_VERSION}")
+                # Recreate views to pick up new columns
+                conn.execute("DROP VIEW IF EXISTS v_files")
+                init_views(conn)
                 conn.execute(f"PRAGMA user_version = {DB_SCHEMA_VERSION}")
         except Exception as e:
             print(f"WARNING: Could not update DB schema version: {e}")

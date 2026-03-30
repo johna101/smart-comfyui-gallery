@@ -221,6 +221,98 @@ def extract_workflow(filepath, target_type='ui'):
     return None
 
 
+def extract_parameters_chunk(filepath):
+    """
+    Extract the A1111/CivitAI 'parameters' text chunk from a PNG file.
+    This chunk is written by CivitAI-aware save nodes (e.g. Image Saver)
+    and contains clean prompts, generation params, and CivitAI resource links.
+    Returns the raw string or None.
+    """
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext != '.png':
+        return None
+    try:
+        with Image.open(filepath) as img:
+            return img.info.get('parameters')
+    except (OSError, Image.DecompressionBombError):
+        return None
+
+
+def parse_a1111_parameters(text):
+    """
+    Parse an A1111-format parameters string into structured metadata.
+    Format:
+        <positive prompt>
+        Negative prompt: <negative prompt>
+        Steps: 20, Sampler: Euler a, CFG scale: 4.0, Seed: 123, Size: 720x1248, Model: name, ...
+        Civitai resources: [{...}]
+    """
+    result = {
+        'positive_prompt': '', 'negative_prompt': '',
+        'steps': None, 'sampler': None, 'cfg': None,
+        'seed': None, 'size': None, 'model': None,
+        'civitai_resources': ''
+    }
+
+    if not text or not isinstance(text, str):
+        return result
+
+    # Split positive prompt from the rest
+    neg_marker = '\nNegative prompt: '
+    if neg_marker in text:
+        result['positive_prompt'] = text[:text.index(neg_marker)].strip()
+        remainder = text[text.index(neg_marker) + len(neg_marker):]
+    else:
+        # No negative prompt — look for Steps: line directly
+        remainder = text
+        # Everything before the params line is the positive prompt
+        lines = text.split('\n')
+        for i, line in enumerate(lines):
+            if line.startswith('Steps: '):
+                result['positive_prompt'] = '\n'.join(lines[:i]).strip()
+                remainder = '\n'.join(lines[i:])
+                break
+        else:
+            result['positive_prompt'] = text.strip()
+            return result
+
+    # Find the params line (starts with "Steps: ")
+    lines = remainder.split('\n')
+    params_line = None
+    neg_lines = []
+    for i, line in enumerate(lines):
+        if line.startswith('Steps: '):
+            params_line = line
+            neg_lines = lines[:i]
+            break
+    else:
+        # No params line found — everything is negative prompt
+        result['negative_prompt'] = remainder.strip()
+        return result
+
+    result['negative_prompt'] = '\n'.join(neg_lines).strip()
+
+    # Extract CivitAI resources JSON before parsing key-value pairs
+    civitai_match = re.search(r'Civitai resources: (\[.*\])', params_line)
+    if civitai_match:
+        result['civitai_resources'] = civitai_match.group(1)
+        params_line = params_line[:civitai_match.start()].rstrip(', ')
+
+    # Parse key: value pairs from params line
+    param_map = {
+        'Steps': 'steps', 'Sampler': 'sampler', 'CFG scale': 'cfg',
+        'Seed': 'seed', 'Size': 'size', 'Model': 'model',
+    }
+    # Split carefully — values may contain commas in model names but keys are known
+    for key, field in param_map.items():
+        pattern = re.escape(key) + r': ([^,]+?)(?:,\s|$)'
+        m = re.search(pattern, params_line)
+        if m:
+            result[field] = m.group(1).strip()
+
+    return result
+
+
 def is_webp_animated(filepath):
     try:
         with Image.open(filepath) as img: return getattr(img, 'is_animated', False)
@@ -494,20 +586,33 @@ def process_single_file(filepath):
 
         workflow_files_content = ""
         workflow_prompt_content = ""
+        civitai_resources_content = ""
 
+        # Try A1111/CivitAI parameters chunk first (clean, structured data)
+        params_raw = extract_parameters_chunk(filepath)
+        if params_raw:
+            parsed_params = parse_a1111_parameters(params_raw)
+            if parsed_params.get('positive_prompt') and len(parsed_params['positive_prompt']) > 5:
+                workflow_prompt_content = parsed_params['positive_prompt']
+                civitai_resources_content = parsed_params.get('civitai_resources', '')
+
+        # Fall back to workflow graph scanning for prompt/files
         if metadata['has_workflow']:
             wf_json = extract_workflow(filepath, target_type='api')
 
             if wf_json:
                 workflow_files_content = extract_workflow_files_string(wf_json)
-                workflow_prompt_content = extract_workflow_prompt_string(wf_json)
+                # Only use workflow scan for prompt if parameters chunk didn't provide one
+                if not workflow_prompt_content:
+                    workflow_prompt_content = extract_workflow_prompt_string(wf_json)
 
         return (
             file_id, filepath, mtime, os.path.basename(filepath),
             metadata['type'], metadata['duration'], metadata['dimensions'],
             metadata['has_workflow'], file_size, time.time(),
             workflow_files_content,
-            workflow_prompt_content
+            workflow_prompt_content,
+            civitai_resources_content
         )
     except Exception as e:
         print(f"ERROR: Failed to process file {os.path.basename(filepath)} in worker: {e}")

@@ -134,14 +134,13 @@ class ComfyMetadataParser:
         node = self.data[source_id]
         inputs = node.get("inputs", {})
 
-        if "text" in inputs and isinstance(inputs["text"], str):
-            return inputs["text"]
-
-        if "t5xxl" in inputs and isinstance(inputs["t5xxl"], str):
-            return inputs["t5xxl"]
-
-        if "text" in inputs and isinstance(inputs["text"], list):
-            return self._trace_text(inputs["text"])
+        # Check common text input keys (varies by node type)
+        for text_key in ("text", "prompt", "t5xxl"):
+            if text_key in inputs:
+                if isinstance(inputs[text_key], str):
+                    return inputs[text_key]
+                if isinstance(inputs[text_key], list):
+                    return self._trace_text(inputs[text_key])
 
         if "conditioning" in inputs:
             return self._trace_text(inputs["conditioning"])

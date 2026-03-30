@@ -31,7 +31,7 @@ files_bp = Blueprint('files', __name__, url_prefix='/galleryout')
 # Keys extracted from file_info for merge/move/rename operations
 _META_KEYS = (
     'size', 'has_workflow', 'is_favorite', 'type', 'duration', 'dimensions',
-    'workflow_files', 'workflow_prompt',
+    'workflow_files', 'workflow_prompt', 'civitai_resources',
 )
 
 
@@ -42,6 +42,7 @@ def _meta_params(meta, new_path, new_name, new_id):
         meta['size'], meta['has_workflow'], meta['is_favorite'],
         meta['type'], meta['duration'], meta['dimensions'],
         meta['workflow_files'], meta['workflow_prompt'],
+        meta.get('civitai_resources', ''),
         new_id,
     )
 
@@ -241,6 +242,7 @@ def copy_batch():
                     is_fav,
                     file_info['last_scanned'],
                     file_info['workflow_files'], file_info['workflow_prompt'],
+                    file_info.get('civitai_resources', ''),
                 ))
 
                 copied_count += 1

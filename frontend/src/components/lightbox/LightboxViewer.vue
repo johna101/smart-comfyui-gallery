@@ -7,7 +7,8 @@ import { useLightboxZoom } from '@/composables/useLightboxZoom'
 import { useLightboxKeys } from '@/composables/useLightboxKeys'
 import { useFolderNavigation } from '@/composables/useFolderNavigation'
 import { useToast } from '@/composables/useToast'
-import { Copy, X } from 'lucide-vue-next'
+import { Copy, X, ExternalLink } from 'lucide-vue-next'
+import type { CivitAIResource } from '@/types/gallery'
 import LightboxHeader from './LightboxHeader.vue'
 import LightboxMedia from './LightboxMedia.vue'
 import StoryboardViewer from '@/components/storyboard/StoryboardViewer.vue'
@@ -37,6 +38,23 @@ const positionLabel = computed(() => {
   if (ui.lightboxIndex < 0) return ''
   return `${ui.lightboxIndex + 1} / ${fileCount.value}`
 })
+
+const civitaiResources = computed<CivitAIResource[]>(() => {
+  const raw = currentFile.value?.civitai_resources
+  if (!raw) return []
+  try { return JSON.parse(raw) } catch { return [] }
+})
+
+function airToUrl(air: string): string | null {
+  const match = air.match(/urn:air:\w+:\w+:civitai:(\d+)@(\d+)/)
+  if (!match) return null
+  return `https://civitai.com/models/${match[1]}?modelVersionId=${match[2]}`
+}
+
+function airType(air: string): string {
+  const match = air.match(/urn:air:\w+:(\w+):/)
+  return match ? match[1] : 'unknown'
+}
 
 // --- Bind zoom container ref from media component ---
 watch(mediaRef, (comp) => {
@@ -379,6 +397,47 @@ useLightboxKeys({
                         title="Copy"
                         @click="copyToClipboard(item)"
                       ><Copy :size="12" /></button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- CivitAI Resources -->
+                <div v-if="civitaiResources.length > 0">
+                  <h4 class="text-white/50 text-xs uppercase tracking-wide mb-1">CivitAI Resources</h4>
+                  <div class="bg-white/5 rounded-lg p-2 space-y-1">
+                    <div
+                      v-for="(resource, i) in civitaiResources"
+                      :key="i"
+                      class="flex items-start gap-2 px-1.5 py-1.5 rounded hover:bg-white/5"
+                    >
+                      <span
+                        class="shrink-0 text-[10px] font-medium uppercase px-1.5 py-0.5 rounded mt-0.5"
+                        :class="{
+                          'bg-blue-500/20 text-blue-300': airType(resource.air) === 'checkpoint',
+                          'bg-amber-500/20 text-amber-300': airType(resource.air) === 'lora',
+                          'bg-purple-500/20 text-purple-300': airType(resource.air) === 'embedding',
+                          'bg-white/10 text-white/50': !['checkpoint', 'lora', 'embedding'].includes(airType(resource.air))
+                        }"
+                      >{{ airType(resource.air) }}</span>
+                      <div class="flex-1 min-w-0">
+                        <a
+                          v-if="airToUrl(resource.air)"
+                          :href="airToUrl(resource.air)!"
+                          target="_blank"
+                          rel="noopener"
+                          class="text-white/90 text-xs hover:text-blue-300 transition-colors flex items-center gap-1"
+                        >
+                          <span class="truncate">{{ resource.modelName }}</span>
+                          <ExternalLink :size="10" class="shrink-0 opacity-50" />
+                        </a>
+                        <span v-else class="text-white/80 text-xs truncate block">{{ resource.modelName }}</span>
+                        <div class="text-white/40 text-[10px]">
+                          {{ resource.versionName }}
+                          <span v-if="resource.weight != null && resource.weight !== 1.0" class="text-white/30">
+                            @ {{ resource.weight }}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

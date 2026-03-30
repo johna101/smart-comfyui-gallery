@@ -14,6 +14,15 @@ export interface GalleryFile {
   last_scanned: number
   workflow_files: string
   workflow_prompt: string
+  civitai_resources: string
+}
+
+export interface CivitAIResource {
+  modelName: string
+  versionName: string
+  type?: string
+  weight?: number
+  air: string
 }
 
 export interface FolderInfo {

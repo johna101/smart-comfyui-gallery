@@ -10,7 +10,7 @@ CREATE_VIEW_FILES = """
     CREATE VIEW IF NOT EXISTS v_files AS
     SELECT id, path, mtime, name, type, duration, dimensions,
            has_workflow, is_favorite, size, last_scanned,
-           workflow_files, workflow_prompt
+           workflow_files, workflow_prompt, civitai_resources
     FROM files
 """
 
@@ -24,11 +24,12 @@ def init_views(conn):
 # FILES — upsert (the big one: 4 copies consolidated into 1)
 # ---------------------------------------------------------------------------
 
-# Standard upsert for scan results — 12 positional params from process_single_file()
+# Standard upsert for scan results — 13 positional params from process_single_file()
 FILES_UPSERT = """
     INSERT INTO files (id, path, mtime, name, type, duration, dimensions,
-                       has_workflow, size, last_scanned, workflow_files, workflow_prompt)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       has_workflow, size, last_scanned, workflow_files, workflow_prompt,
+                       civitai_resources)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
         path = excluded.path,
         name = excluded.name,
@@ -40,6 +41,7 @@ FILES_UPSERT = """
         last_scanned = excluded.last_scanned,
         workflow_files = excluded.workflow_files,
         workflow_prompt = excluded.workflow_prompt,
+        civitai_resources = excluded.civitai_resources,
         is_favorite = CASE
             WHEN ABS(files.mtime - excluded.mtime) > 0.1 THEN 0
             ELSE files.is_favorite
@@ -47,23 +49,25 @@ FILES_UPSERT = """
         mtime = excluded.mtime
 """
 
-# Full insert for copy operations — 13 positional params (includes favourite column)
+# Full insert for copy operations — 14 positional params (includes favourite column)
 FILES_INSERT_FULL = """
     INSERT INTO files (
         id, path, mtime, name, type, duration, dimensions, has_workflow,
-        size, is_favorite, last_scanned, workflow_files, workflow_prompt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        size, is_favorite, last_scanned, workflow_files, workflow_prompt,
+        civitai_resources
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 # Merge update — overwrites an existing record with full metadata (move/rename collision)
-# 12 params: path, name, mtime, size, has_workflow, is_favorite, type, duration, dimensions,
-#            workflow_files, workflow_prompt, id
+# 13 params: path, name, mtime, size, has_workflow, is_favorite, type, duration, dimensions,
+#            workflow_files, workflow_prompt, civitai_resources, id
 FILES_MERGE_UPDATE = """
     UPDATE files
     SET path = ?, name = ?, mtime = ?,
         size = ?, has_workflow = ?, is_favorite = ?,
         type = ?, duration = ?, dimensions = ?,
-        workflow_files = ?, workflow_prompt = ?
+        workflow_files = ?, workflow_prompt = ?,
+        civitai_resources = ?
     WHERE id = ?
 """
 
@@ -94,7 +98,7 @@ FILES_EXISTS_BY_ID = "SELECT id FROM files WHERE id = ?"
 # Metadata for rename (all operational columns)
 FILES_SELECT_METADATA_FOR_RENAME = """
     SELECT path, name, size, has_workflow, is_favorite, type, duration, dimensions,
-           workflow_files, workflow_prompt
+           workflow_files, workflow_prompt, civitai_resources
     FROM files WHERE id = ?
 """
 

@@ -22,8 +22,8 @@ from smartgallery.config import (
 )
 from smartgallery import state
 from smartgallery.models import get_db_connection
-from smartgallery.processing import extract_workflow, create_thumbnail
-from smartgallery.utils import generate_node_summary
+from smartgallery.processing import extract_workflow, create_thumbnail, extract_parameters_chunk, parse_a1111_parameters
+from smartgallery.utils import generate_node_summary, clean_prompt_text
 from smartgallery.parser import ComfyMetadataParser
 from smartgallery.routes.files import get_file_info_from_db
 from smartgallery.queries import FILES_SELECT_FOR_THUMBNAIL, FILES_SELECT_FOR_METADATA
@@ -162,42 +162,84 @@ def get_node_summary(file_id):
 
         summary_data = generate_node_summary(ui_json)
 
-        # 3. Extract API version for high-quality Metadata Dashboard
-        api_json = extract_workflow(filepath, target_type='api')
+        # 3. Try A1111/CivitAI parameters chunk first (structured, reliable)
         meta_data = {}
-
-        try:
-            # We prefer API format for real values (Seed, CFG, etc.)
-            json_source = api_json if api_json else ui_json
-            wf_data = json.loads(json_source)
-            if isinstance(wf_data, list):
-                wf_data = {str(i): n for i, n in enumerate(wf_data)}
-
-            parser = ComfyMetadataParser(wf_data)
-            parsed_meta = parser.parse()
-
-            # --- STRICT VALIDATION LOGIC ---
-            tech_count = 0
-            if parsed_meta.get('seed'): tech_count += 1
-            if parsed_meta.get('model'): tech_count += 1
-            if parsed_meta.get('steps'): tech_count += 1
-            if parsed_meta.get('sampler'): tech_count += 1
-
-            has_prompt = len(parsed_meta.get('positive_prompt', '')) > 5
-
-            if has_prompt and tech_count >= 2:
-                meta_data = parsed_meta
-                # Ensure resolution is always present using DB fallback
-                if not meta_data.get('width') or not meta_data.get('height'):
-                    if db_dimensions and 'x' in db_dimensions:
+        params_raw = extract_parameters_chunk(filepath)
+        if params_raw:
+            try:
+                parsed_params = parse_a1111_parameters(params_raw)
+                if parsed_params.get('positive_prompt') and len(parsed_params['positive_prompt']) > 5:
+                    # Parse size string
+                    w, h = None, None
+                    size_str = parsed_params.get('size', '')
+                    if size_str and 'x' in size_str:
+                        parts = size_str.split('x')
+                        w, h = parts[0].strip(), parts[1].strip()
+                    elif db_dimensions and 'x' in db_dimensions:
                         w, h = db_dimensions.split('x')
-                        meta_data['width'], meta_data['height'] = w.strip(), h.strip()
-            else:
-                meta_data = {}
+                        w, h = w.strip(), h.strip()
 
-        except Exception as e:
-            print(f"Metadata Validation Warning: {e}")
-            meta_data = {}
+                    # Parse CivitAI resources JSON
+                    civitai_list = []
+                    if parsed_params.get('civitai_resources'):
+                        try:
+                            civitai_list = json.loads(parsed_params['civitai_resources'])
+                        except (json.JSONDecodeError, ValueError):
+                            pass
+
+                    cleaned = clean_prompt_text(parsed_params['positive_prompt'])
+                    meta_data = {
+                        'positive_prompt': parsed_params['positive_prompt'],
+                        'negative_prompt': parsed_params.get('negative_prompt', ''),
+                        'positive_prompt_clean': cleaned['text'],
+                        'seed': parsed_params.get('seed'),
+                        'steps': parsed_params.get('steps'),
+                        'cfg': parsed_params.get('cfg'),
+                        'sampler': parsed_params.get('sampler'),
+                        'model': parsed_params.get('model'),
+                        'width': w,
+                        'height': h,
+                        'loras': cleaned['loras'],
+                        'civitai_resources': civitai_list,
+                    }
+            except Exception as e:
+                print(f"Parameters chunk parse warning: {e}")
+
+        # 4. Fall back to workflow graph parsing if parameters chunk didn't produce metadata
+        if not meta_data:
+            api_json = extract_workflow(filepath, target_type='api')
+
+            try:
+                json_source = api_json if api_json else ui_json
+                wf_data = json.loads(json_source)
+                if isinstance(wf_data, list):
+                    wf_data = {str(i): n for i, n in enumerate(wf_data)}
+
+                parser = ComfyMetadataParser(wf_data)
+                parsed_meta = parser.parse()
+
+                # --- STRICT VALIDATION LOGIC ---
+                tech_count = 0
+                if parsed_meta.get('seed'): tech_count += 1
+                if parsed_meta.get('model'): tech_count += 1
+                if parsed_meta.get('steps'): tech_count += 1
+                if parsed_meta.get('sampler'): tech_count += 1
+
+                has_prompt = len(parsed_meta.get('positive_prompt', '')) > 5
+
+                if has_prompt and tech_count >= 2:
+                    meta_data = parsed_meta
+                    meta_data['civitai_resources'] = []
+                    if not meta_data.get('width') or not meta_data.get('height'):
+                        if db_dimensions and 'x' in db_dimensions:
+                            w, h = db_dimensions.split('x')
+                            meta_data['width'], meta_data['height'] = w.strip(), h.strip()
+                else:
+                    meta_data = {}
+
+            except Exception as e:
+                print(f"Metadata Validation Warning: {e}")
+                meta_data = {}
 
         return jsonify({
             'status': 'success',
