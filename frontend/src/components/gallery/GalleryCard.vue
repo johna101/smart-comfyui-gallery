@@ -3,6 +3,9 @@ import { computed } from 'vue'
 import type { GalleryFile } from '@/types/gallery'
 import { useGalleryStore } from '@/stores/gallery'
 import { fileApi, mediaApi } from '@/api/gallery'
+import {
+  Settings, Star, Ruler, HardDrive, Calendar, Trash2, Check, Play, Download,
+} from 'lucide-vue-next'
 import LazyImage from './LazyImage.vue'
 
 const props = defineProps<{
@@ -126,30 +129,30 @@ async function deleteFile(e: MouseEvent) {
 
       <!-- Workflow badge / green dot -->
       <div v-if="hasWorkflow && !focusMode" class="absolute top-2 left-2">
-        <span class="inline-flex items-center gap-1 bg-green-600/90 text-white text-xs font-medium px-2 py-0.5 rounded-full">
-          <span class="text-[10px]">&#9881;</span> Workflow
+        <span class="inline-flex items-center gap-1 bg-workflow-bg text-workflow text-xs font-medium px-2 py-0.5 rounded-full border border-workflow/20">
+          <Settings :size="10" /> Workflow
         </span>
       </div>
       <div
         v-if="hasWorkflow && focusMode"
-        class="absolute top-2 left-2 w-3 h-3 rounded-full bg-green-500 shadow-lg"
+        class="absolute top-2 left-2 w-3 h-3 rounded-full bg-workflow shadow-lg"
         title="Has workflow"
       />
 
       <!-- Favorite star overlay (focus mode) -->
       <div
         v-if="isFavorite && focusMode"
-        class="absolute top-2 right-2 text-yellow-400 text-lg drop-shadow"
-      >&#9733;</div>
+        class="absolute top-2 right-2 text-favorite drop-shadow"
+      ><Star :size="18" class="fill-current" /></div>
 
       <!-- Duration overlay for videos -->
       <div v-if="isVideo && file.duration" class="absolute bottom-2 right-2 flex items-center gap-1 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
-        <span class="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
+        <span class="w-1.5 h-1.5 rounded-full bg-media-video inline-block" />
         {{ file.duration }}
       </div>
 
       <!-- Animated badge -->
-      <div v-if="isAnimated" class="absolute bottom-2 right-2 bg-purple-600/80 text-white text-xs px-1.5 py-0.5 rounded">
+      <div v-if="isAnimated" class="absolute bottom-2 right-2 bg-media-video-bg text-media-video text-xs px-1.5 py-0.5 rounded border border-media-video/20">
         GIF
       </div>
 
@@ -159,12 +162,12 @@ async function deleteFile(e: MouseEvent) {
         class="absolute bottom-2 left-2 w-7 h-7 rounded-full bg-white flex items-center justify-center shadow-lg"
         @click="handleCheckmark"
       >
-        <span class="text-fuchsia-600 text-sm font-bold">&#10003;</span>
+        <Check :size="14" class="text-fuchsia-600" />
       </button>
 
       <!-- Play button overlay for videos -->
-      <div v-if="isVideo" class="absolute bottom-2 left-2 bg-black/50 rounded-full p-1">
-        <span class="text-white text-lg">&#9654;</span>
+      <div v-if="isVideo" class="absolute bottom-2 left-2 bg-black/50 rounded-full p-1.5">
+        <Play :size="16" class="text-white fill-current" />
       </div>
     </div>
 
@@ -172,33 +175,33 @@ async function deleteFile(e: MouseEvent) {
     <div v-if="!focusMode" class="p-3 space-y-1.5 cursor-pointer" @click="handleCheckmark">
       <p class="text-white text-sm font-medium truncate" :title="file.name">{{ file.name }}</p>
       <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-neutral-400 text-xs">
-        <span v-if="file.dimensions">&#128208; {{ file.dimensions }}</span>
-        <span>&#128190; {{ fileSize }}</span>
+        <span v-if="file.dimensions" class="inline-flex items-center gap-0.5"><Ruler :size="11" /> {{ file.dimensions }}</span>
+        <span class="inline-flex items-center gap-0.5"><HardDrive :size="11" /> {{ fileSize }}</span>
       </div>
-      <div class="text-neutral-500 text-xs">
-        &#128197; {{ fileDate }}
+      <div class="text-neutral-500 text-xs inline-flex items-center gap-0.5">
+        <Calendar :size="11" /> {{ fileDate }}
       </div>
 
       <!-- Action buttons + selection toggle -->
       <div class="flex items-center gap-1 pt-1">
         <button
-          class="p-1.5 rounded text-neutral-400 hover:text-yellow-400 hover:bg-neutral-800 transition-colors"
-          :class="{ 'text-yellow-400': isFavorite }"
+          class="p-1.5 rounded text-neutral-400 hover:text-favorite hover:bg-neutral-800 transition-colors"
+          :class="{ 'text-favorite': isFavorite }"
           title="Toggle Favorite"
           @click="toggleFavorite"
-        >&#9733;</button>
+        ><Star :size="14" :class="{ 'fill-current': isFavorite }" /></button>
         <a
           :href="mediaApi.fileUrl(file.id)"
           :download="file.name"
-          class="p-1.5 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+          class="p-1.5 rounded text-neutral-400 hover:text-file hover:bg-neutral-800 transition-colors"
           title="Download"
           @click.stop
-        >&#128190;</a>
+        ><Download :size="14" /></a>
         <button
-          class="p-1.5 rounded text-neutral-400 hover:text-red-400 hover:bg-neutral-800 transition-colors"
+          class="p-1.5 rounded text-neutral-400 hover:text-danger hover:bg-neutral-800 transition-colors"
           title="Delete"
           @click="deleteFile"
-        >&#128465;</button>
+        ><Trash2 :size="14" /></button>
 
         <!-- Selection checkmark (right side of action row) -->
         <button
@@ -210,7 +213,7 @@ async function deleteFile(e: MouseEvent) {
           title="Select"
           @click="handleCheckmark"
         >
-          <span v-if="selected" class="text-white text-xs">&#10003;</span>
+          <Check v-if="selected" :size="12" class="text-white" />
         </button>
       </div>
     </div>

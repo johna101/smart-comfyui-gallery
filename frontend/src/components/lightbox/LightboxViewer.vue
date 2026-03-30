@@ -334,7 +334,7 @@ useLightboxKeys({
                   <div v-if="currentFile.dimensions"><span class="text-white/40">Size:</span> {{ currentFile.dimensions }}</div>
                   <div v-if="currentFile.duration"><span class="text-white/40">Duration:</span> {{ currentFile.duration }}</div>
                   <div><span class="text-white/40">Type:</span> {{ currentFile.type }}</div>
-                  <div v-if="currentFile.has_workflow" class="text-green-400 text-xs">✓ Has workflow</div>
+                  <div v-if="currentFile.has_workflow" class="text-workflow text-xs">✓ Has workflow</div>
                 </div>
 
                 <!-- Prompt -->

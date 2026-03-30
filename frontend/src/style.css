@@ -3,6 +3,7 @@
 /* SmartGallery theme — maps existing CSS variables to Tailwind utility classes.
    Use as: bg-surface, text-primary, border-border, etc. */
 @theme {
+  /* --- Base UI --- */
   --color-bg: #0a0a0a;
   --color-surface: #1a1a1a;
   --color-surface-hover: #252525;
@@ -11,14 +12,47 @@
   --color-text: #f8f9fa;
   --color-text-muted: #adb5bd;
   --color-border: #343a40;
-  --color-danger: #dc3545;
-  --color-danger-hover: #c82333;
-  --color-favorite: #ffc107;
-  --color-workflow: #28a745;
-  --color-success: #20c997;
-  --color-ai: #ff00ff;
   --color-glass-bg: rgba(255, 255, 255, 0.05);
   --color-glass-border: rgba(255, 255, 255, 0.1);
+
+  /* --- Semantic: Workflow (green) --- */
+  --color-workflow: #4ade80;
+  --color-workflow-hover: #86efac;
+  --color-workflow-bg: rgba(74, 222, 128, 0.15);
+
+  /* --- Semantic: File metadata / info (cyan) --- */
+  --color-metadata: #22d3ee;
+  --color-metadata-hover: #67e8f9;
+  --color-metadata-bg: rgba(34, 211, 238, 0.15);
+
+  /* --- Semantic: File (sky) --- */
+  --color-file: #38bdf8;
+  --color-file-hover: #7dd3fc;
+  --color-file-bg: rgba(56, 189, 248, 0.15);
+
+  /* --- Semantic: Media types --- */
+  --color-media-image: #60a5fa;
+  --color-media-image-hover: #93bbfd;
+  --color-media-image-bg: rgba(96, 165, 250, 0.15);
+
+  --color-media-video: #a78bfa;
+  --color-media-video-hover: #c4b5fd;
+  --color-media-video-bg: rgba(167, 139, 250, 0.15);
+
+  --color-media-audio: #fbbf24;
+  --color-media-audio-hover: #fcd34d;
+  --color-media-audio-bg: rgba(251, 191, 36, 0.15);
+
+  /* --- Semantic: Actions --- */
+  --color-danger: #d46e75;
+  --color-danger-hover: #c82333;
+  --color-danger-bg: rgba(220, 53, 69, 0.15);
+
+  --color-favorite: #ffc107;
+  --color-favorite-hover: #ffcd38;
+  --color-favorite-bg: rgba(255, 193, 7, 0.15);
+
+  --color-success: #20c997;
 }
 
 /* Base styles matching the existing app */

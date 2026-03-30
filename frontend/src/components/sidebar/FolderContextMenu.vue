@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useGalleryStore } from '@/stores/gallery'
 import { folderApi } from '@/api/gallery'
+import { FolderPlus, Pencil, FolderInput, Trash2 } from 'lucide-vue-next'
 
 const props = defineProps<{
   folderKey: string
@@ -114,17 +115,17 @@ async function createSubfolder() {
       @click.stop
     >
       <button class="ctx-item" @click="createSubfolder">
-        <span>&#128194;</span> New Folder
+        <FolderPlus :size="16" /> New Folder
       </button>
       <button class="ctx-item" @click="renameFolder" v-if="!isMount">
-        <span>&#9999;</span> Rename
+        <Pencil :size="16" /> Rename
       </button>
       <button class="ctx-item" @click="moveFolder" v-if="!isMount">
-        <span>&#128193;</span> Move
+        <FolderInput :size="16" /> Move
       </button>
       <hr v-if="!isProtected" class="border-neutral-700 my-1" />
-      <button class="ctx-item text-red-400 hover:text-red-300" @click="deleteFolder" v-if="!isProtected">
-        <span>&#128465;</span> Delete
+      <button class="ctx-item text-danger hover:text-danger-hover" @click="deleteFolder" v-if="!isProtected">
+        <Trash2 :size="16" /> Delete
       </button>
     </div>
   </Teleport>

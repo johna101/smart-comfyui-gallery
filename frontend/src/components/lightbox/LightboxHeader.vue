@@ -5,7 +5,7 @@ import { mediaApi } from '@/api/gallery'
 import { useGalleryStore } from '@/stores/gallery'
 import {
   FolderOpen, ZoomIn, ZoomOut, Star, Download, Pencil, Trash2,
-  Settings, ClipboardList, Paperclip, ArrowDownToLine, ArrowUpFromLine,
+  ClipboardList, ClipboardCopy, ArrowDownToLine, ArrowUpFromLine,
   Film, Eye, ExternalLink, EyeOff, X,
 } from 'lucide-vue-next'
 
@@ -130,30 +130,35 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
       <!-- Favorite -->
       <button
         class="lb-btn"
-        :class="{ 'text-yellow-400': isFavorite }"
+        :class="{ 'lb-favorite': isFavorite }"
         :title="isFavorite ? 'Remove Favorite (F)' : 'Add Favorite (F)'"
         @click="emit('toggleFavorite')"
       ><Star :size="18" :class="{ 'fill-current': isFavorite }" /></button>
 
-      <!-- Download -->
+      <!-- File -->
       <a
         v-if="file"
         :href="mediaApi.downloadUrl(file.id)"
-        class="lb-btn inline-block"
+        class="lb-btn lb-file inline-block"
         title="Download (S)"
         download
       ><Download :size="18" /></a>
-
+        <button
+          v-if="gallery.hasInputPath"
+          class="lb-btn lb-file inline-block"
+          title="Send to ComfyUI Input (Q)"
+          @click="emit('sendToInput')"
+        ><ArrowUpFromLine :size="18" /></button>
       <!-- Rename -->
       <button
-        class="lb-btn"
+        class="lb-btn lb-file inline-block"
         title="Rename (R)"
         @click="emit('rename')"
       ><Pencil :size="18" /></button>
 
       <!-- Delete -->
       <button
-        class="lb-btn text-red-400 hover:text-red-300"
+        class="lb-btn lb-danger"
         title="Delete (D)"
         @click="emit('delete')"
       ><Trash2 :size="18" /></button>
@@ -164,37 +169,26 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
       <template v-if="hasWorkflow">
         <a
           :href="mediaApi.workflowUrl(file!.id)"
-          class="lb-btn inline-block"
-          title="Download Workflow (W)"
+          class="lb-btn lb-workflow inline-block"
+          title="Download Workflow (W)..."
           download
-        ><Settings :size="18" /></a>
+        ><Download :size="18" /></a>
         <button
-          class="lb-btn"
-          title="Node Summary (N)"
-          @click="emit('nodeSummary')"
-        ><ClipboardList :size="18" /></button>
-        <button
-          class="lb-btn"
+          class="lb-btn lb-workflow"
           title="Copy Workflow (C)"
           @click="emit('copyWorkflow')"
-        ><Paperclip :size="18" /></button>
-      </template>
-
-      <!-- Inject to ComfyUI -->
-      <template v-if="gallery.hasInputPath || (gallery.hasWorkflowsPath && hasWorkflow)">
-        <div class="w-px h-6 bg-white/20 mx-1" />
-        <button
-          v-if="gallery.hasInputPath"
-          class="lb-btn text-cyan-400 hover:text-cyan-300"
-          title="Send to ComfyUI Input (Q)"
-          @click="emit('sendToInput')"
-        ><ArrowDownToLine :size="18" /></button>
+        ><ClipboardCopy :size="18" /></button>
         <button
           v-if="gallery.hasWorkflowsPath && hasWorkflow"
-          class="lb-btn text-green-400 hover:text-green-300"
+          class="lb-btn lb-workflow"
           title="Send Workflow to ComfyUI (Shift+W)"
           @click="emit('sendWorkflow')"
         ><ArrowUpFromLine :size="18" /></button>
+<!--        <button-->
+<!--          class="lb-btn lb-metadata"-->
+<!--          title="Node Summary (N)"-->
+<!--          @click="emit('nodeSummary')"-->
+<!--        ><ClipboardList :size="18" /></button>-->
       </template>
 
       <!-- Storyboard -->
@@ -207,7 +201,7 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
 
       <!-- Info / Metadata panel -->
       <button
-        class="lb-btn"
+        class="lb-btn lb-metadata"
         title="File Info & Prompt (I)"
         @click="emit('toggleMeta')"
       ><Eye :size="18" /></button>
@@ -238,5 +232,25 @@ const isFavorite = computed(() => !!props.file?.is_favorite)
 @reference "tailwindcss";
 .lb-btn {
   @apply text-white/70 hover:text-white hover:bg-white/10 rounded-lg px-2.5 py-1.5 text-base transition-colors cursor-pointer no-underline;
+}
+.lb-btn.lb-workflow {
+  color: var(--color-workflow);
+  &:hover { color: var(--color-workflow-hover); }
+}
+.lb-btn.lb-metadata {
+  color: var(--color-metadata);
+  &:hover { color: var(--color-metadata-hover); }
+}
+.lb-btn.lb-file {
+  color: var(--color-file);
+  &:hover { color: var(--color-file-hover); }
+}
+.lb-btn.lb-danger {
+  color: var(--color-danger);
+  &:hover { color: var(--color-danger-hover); }
+}
+.lb-btn.lb-favorite {
+  color: var(--color-favorite);
+  &:hover { color: var(--color-favorite-hover); }
 }
 </style>

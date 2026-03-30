@@ -251,7 +251,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
         <button
           class="text-xs px-2 py-0.5 rounded border cursor-pointer transition-colors"
           :class="hdMode
-            ? 'border-green-500/40 bg-green-500/15 text-green-300 hover:bg-green-500/25'
+            ? 'border-media-video/40 bg-media-video-bg text-media-video hover:bg-media-video-bg'
             : 'border-white/15 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70'"
           @click="toggleHd"
         >

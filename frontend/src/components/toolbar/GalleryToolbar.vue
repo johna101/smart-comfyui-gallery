@@ -144,7 +144,7 @@ const fileCountLabel = computed(() => {
           <span
             class="text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-1"
             :class="preferences.focusMode
-              ? 'bg-green-500/30 text-green-400'
+              ? 'bg-success/30 text-success'
               : 'bg-white/10 text-white/40'"
           >
             {{ preferences.focusMode ? 'ON' : 'OFF' }}

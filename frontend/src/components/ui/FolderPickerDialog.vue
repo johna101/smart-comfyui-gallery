@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+import { Calendar, X } from 'lucide-vue-next'
 import FolderTree from '@/components/sidebar/FolderTree.vue'
 
 const props = withDefaults(defineProps<{
@@ -52,7 +53,7 @@ function handlePick(folderKey: string) {
           <input
             v-model="searchFilter"
             type="text"
-            placeholder="&#128269; Search folders..."
+            placeholder="Search folders..."
             class="w-full bg-neutral-800 border border-neutral-600 rounded-lg px-3 py-2 text-white text-sm placeholder-neutral-500 outline-none focus:border-neutral-400"
           />
           <div class="flex gap-2">
@@ -60,12 +61,12 @@ function handlePick(folderKey: string) {
               class="flex-1 py-1.5 rounded-lg text-sm text-center transition-colors"
               :class="sortKey === 'name' ? 'bg-blue-600/30 text-white border border-blue-500/50' : 'bg-neutral-800 text-neutral-400 border border-neutral-600'"
               @click="sortKey = 'name'; sortDir = 'asc'"
-            >A-Z &#8593;</button>
+            >A-Z</button>
             <button
-              class="flex-1 py-1.5 rounded-lg text-sm text-center transition-colors"
+              class="flex-1 py-1.5 rounded-lg text-sm text-center transition-colors flex items-center justify-center"
               :class="sortKey === 'mtime' ? 'bg-blue-600/30 text-white border border-blue-500/50' : 'bg-neutral-800 text-neutral-400 border border-neutral-600'"
               @click="sortKey = 'mtime'; sortDir = 'desc'"
-            >&#128197;</button>
+            ><Calendar :size="14" /></button>
           </div>
         </div>
 
@@ -95,7 +96,7 @@ function handlePick(folderKey: string) {
         <button
           class="w-full py-3 text-center text-red-400 hover:bg-red-900/30 border-t border-neutral-700 transition-colors cursor-pointer"
           @click="emit('close')"
-        >&#10005; Cancel</button>
+        ><X :size="14" class="inline-block" /> Cancel</button>
       </div>
     </div>
   </Teleport>

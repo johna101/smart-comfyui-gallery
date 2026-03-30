@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useGalleryStore } from '@/stores/gallery'
 import { usePreferencesStore } from '@/stores/preferences'
+import { ChevronRight, Folder, Link, ArrowRight, MoreVertical } from 'lucide-vue-next'
 
 const props = withDefaults(defineProps<{
   folderKey: string
@@ -153,14 +154,14 @@ function handleContextMenu(e: MouseEvent) {
         class="w-5 h-5 flex items-center justify-center text-neutral-500 hover:text-white shrink-0 transition-transform"
         :class="{ 'rotate-90': isExpanded }"
         @click.stop="toggleExpand"
-      >&#9654;</button>
+      ><ChevronRight :size="14" /></button>
       <span v-else class="w-5 h-5 shrink-0" />
 
       <!-- Folder icon + name (clickable) -->
       <div class="flex-1 min-w-0 flex items-center gap-1.5 truncate" @click="handleClick">
-        <span class="text-sm shrink-0">&#128193;</span>
+        <Folder :size="14" class="shrink-0" />
         <span class="text-sm truncate">{{ folder?.display_name }}</span>
-        <span v-if="folder?.is_mount" class="text-neutral-500 text-xs shrink-0">&#128279;</span>
+        <Link v-if="folder?.is_mount" :size="12" class="text-neutral-500 shrink-0" />
         <span
           v-if="isFocused && mode === 'nav'"
           class="w-2 h-2 rounded-full bg-amber-400 shrink-0 ml-auto"
@@ -174,14 +175,14 @@ function handleContextMenu(e: MouseEvent) {
         class="shrink-0 text-neutral-500 hover:text-white px-1"
         title="Move here"
         @click.stop="emit('pick', folderKey)"
-      >&#10132;</button>
+      ><ArrowRight :size="14" /></button>
 
       <!-- Nav mode: context menu trigger -->
       <button
         v-if="mode === 'nav'"
         class="shrink-0 text-neutral-500 hover:text-white opacity-0 group-hover/item:opacity-100 px-1 transition-opacity"
         @click.stop="handleContextMenu"
-      >&#8942;</button>
+      ><MoreVertical :size="14" /></button>
     </div>
 
     <!-- Children (recursive) -->

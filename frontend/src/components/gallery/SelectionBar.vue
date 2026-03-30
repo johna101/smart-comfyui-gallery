@@ -176,19 +176,19 @@ onUnmounted(() => document.removeEventListener('click', closeMore))
         <div class="flex items-center gap-2 relative">
           <button
             v-if="canCompare"
-            class="sel-btn text-blue-400"
+            class="sel-btn text-metadata"
             title="Compare selected images"
             @click="showCompare = true"
           ><Scale :size="20" /></button>
 
           <button
-            class="sel-btn text-yellow-400"
+            class="sel-btn text-favorite"
             title="Favorite selected"
             @click="favoriteSelected"
           ><Star :size="20" class="fill-current" /></button>
 
           <button
-            class="sel-btn text-red-400"
+            class="sel-btn text-danger"
             title="Delete selected"
             @click="deleteSelected"
           ><Trash2 :size="20" /></button>

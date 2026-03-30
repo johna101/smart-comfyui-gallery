@@ -3,6 +3,7 @@ import { ref, onMounted, watch, nextTick } from 'vue'
 import { useGalleryStore } from '@/stores/gallery'
 import { usePreferencesStore } from '@/stores/preferences'
 import { useFolderNavigation } from '@/composables/useFolderNavigation'
+import { ChevronsLeft, ChevronsRight, Calendar } from 'lucide-vue-next'
 import FolderTree from './FolderTree.vue'
 import FolderContextMenu from './FolderContextMenu.vue'
 import FolderMoveDialog from './FolderMoveDialog.vue'
@@ -118,12 +119,12 @@ function collapseAll() {
             class="text-neutral-500 hover:text-white text-sm px-1"
             title="Collapse all"
             @click="collapseAll"
-          >&#9668;</button>
+          ><ChevronsLeft :size="16" /></button>
           <button
-            class="text-neutral-500 hover:text-white text-sm px-1"
+            class="text-neutral-500 hover:text-white px-1"
             title="Expand all"
             @click="expandAll"
-          >&#9654;</button>
+          ><ChevronsRight :size="16" /></button>
         </div>
       </div>
     </div>
@@ -133,7 +134,7 @@ function collapseAll() {
       <input
         v-model="searchFilter"
         type="text"
-        placeholder="&#128269; Search folders..."
+        placeholder="Search folders..."
         class="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-1.5 text-white text-sm placeholder-neutral-500 outline-none focus:border-neutral-500"
       />
       <div class="flex gap-2">
@@ -141,12 +142,12 @@ function collapseAll() {
           class="flex-1 py-1 rounded-lg text-xs text-center transition-colors"
           :class="sortKey === 'name' ? 'bg-blue-600/30 text-white border border-blue-500/50' : 'bg-neutral-800 text-neutral-400 border border-neutral-700'"
           @click="sortKey !== 'name' && toggleSort()"
-        >A-Z &#8593;</button>
+        >A-Z</button>
         <button
-          class="flex-1 py-1 rounded-lg text-xs text-center transition-colors"
+          class="flex-1 py-1 rounded-lg text-xs text-center transition-colors flex items-center justify-center"
           :class="sortKey === 'mtime' ? 'bg-blue-600/30 text-white border border-blue-500/50' : 'bg-neutral-800 text-neutral-400 border border-neutral-700'"
           @click="sortKey !== 'mtime' && toggleSort()"
-        >&#128197;</button>
+        ><Calendar :size="12" /></button>
       </div>
     </div>
 
