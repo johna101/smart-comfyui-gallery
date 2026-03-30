@@ -5,7 +5,11 @@
       "Bash(git commit:*)",
       "Bash(grep -r logo /Users/john/dev/smart-comfyui-gallery --include=*.py --include=*.html --include=*.css --include=*.js --include=*.vue --exclude-dir=node_modules)",
       "Bash(npm run:*)",
-      "Bash(git pull:*)"
+      "Bash(git pull:*)",
+      "Bash(python -c \"from smartgallery import config; from smartgallery import queries; from smartgallery.routes import ALL_BLUEPRINTS; print\\(f''OK: {len\\(ALL_BLUEPRINTS\\)} blueprints, schema v{config.DB_SCHEMA_VERSION}''\\)\")",
+      "Bash(python -m py_compile smartgallery/config.py)",
+      "Bash(python -m py_compile smartgallery/queries.py)",
+      "Bash(python -m py_compile smartgallery/models.py)"
     ]
   }
 }
