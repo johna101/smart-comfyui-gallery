@@ -234,40 +234,51 @@ class SmartGalleryHandler(FileSystemEventHandler):
             logger.info("Watcher: moved %s → %s", os.path.basename(src_path), os.path.basename(dest_path))
 
     def _scan_new_folder(self, folder_path):
-        """Scan a newly created folder for media files not yet in the DB.
+        """Recursively scan a newly created folder tree for media files not yet in the DB.
 
-        Called immediately on folder detection and again at intervals to catch files
-        written after the initial scan (e.g. ComfyUI generation takes 10-60+ seconds).
+        Uses os.walk to find files at all levels — necessary because watchdog's inotify
+        watch on the root may not cover new subdirectories either. Called immediately on
+        folder detection and again at intervals to catch files from slow generations.
         Returns the number of new files inserted.
         """
         if not os.path.isdir(folder_path):
             return 0
 
         inserted = 0
+        new_subdirs = []
         try:
-            for name in os.listdir(folder_path):
-                filepath = os.path.join(folder_path, name)
-                if not os.path.isfile(filepath):
-                    continue
-                if _should_ignore(filepath) or not _is_valid_media(filepath):
-                    continue
-                # Skip if already in DB
-                file_id = hashlib.md5(filepath.encode()).hexdigest()
-                try:
-                    with get_db_connection() as conn:
-                        if conn.execute(FILES_EXISTS_BY_ID, (file_id,)).fetchone():
-                            continue
-                except Exception:
-                    pass
-                new_id = _process_and_upsert(filepath)
-                if new_id:
-                    publish_event("files_detected", {
-                        "folder_key": folder_key_from_filepath(filepath),
-                        "file_id": new_id,
-                        "filename": name,
-                    }, source="watcher")
-                    logger.info("Watcher: new file in new folder: %s", name)
-                    inserted += 1
+            for dirpath, dirnames, filenames in os.walk(folder_path):
+                # Skip hidden/excluded directories
+                dirnames[:] = [d for d in dirnames
+                               if not d.startswith('.')
+                               and d not in EXCLUDED_DIRS]
+
+                # Track subdirectories for folder_created events
+                for dirname in dirnames:
+                    subdir = os.path.join(dirpath, dirname)
+                    new_subdirs.append(subdir)
+
+                for name in filenames:
+                    filepath = os.path.join(dirpath, name)
+                    if _should_ignore(filepath) or not _is_valid_media(filepath):
+                        continue
+                    # Skip if already in DB
+                    file_id = hashlib.md5(filepath.encode()).hexdigest()
+                    try:
+                        with get_db_connection() as conn:
+                            if conn.execute(FILES_EXISTS_BY_ID, (file_id,)).fetchone():
+                                continue
+                    except Exception:
+                        pass
+                    new_id = _process_and_upsert(filepath)
+                    if new_id:
+                        publish_event("files_detected", {
+                            "folder_key": folder_key_from_filepath(filepath),
+                            "file_id": new_id,
+                            "filename": name,
+                        }, source="watcher")
+                        print(f"[Watcher:Scan] Processed: {name}")
+                        inserted += 1
         except OSError as e:
             logger.warning("Watcher: could not scan folder %s: %s", folder_path, e)
 
@@ -297,10 +308,16 @@ class SmartGalleryHandler(FileSystemEventHandler):
 
         # Follow-up scans at increasing intervals — covers slower generations.
         # Stops early if folder disappears. Scans are cheap (DB check before processing).
+        # Each poll also refreshes the folder config so new subdirs appear in sidebar.
         def poll(attempt, delays):
             if not os.path.isdir(folder_path):
                 return
-            self._scan_new_folder(folder_path)
+            found = self._scan_new_folder(folder_path)
+            if found:
+                get_dynamic_folder_config(force_refresh=True)
+                publish_event("folder_created", {
+                    "folder_name": os.path.basename(folder_path),
+                }, source="watcher")
             if delays:
                 t = threading.Timer(delays[0], poll, args=[attempt + 1, delays[1:]])
                 t.daemon = True
