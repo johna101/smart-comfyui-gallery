@@ -114,8 +114,9 @@ class SmartGalleryHandler(FileSystemEventHandler):
         observer = state.watcher_observer
         if observer:
             try:
+                watch_path = os.path.realpath(BASE_OUTPUT_PATH)
                 observer.unschedule_all()
-                observer.schedule(self, BASE_OUTPUT_PATH, recursive=True)
+                observer.schedule(self, watch_path, recursive=True)
                 logger.info("Watcher: refreshed observer watches")
             except Exception as e:
                 logger.warning("Watcher: failed to refresh observer: %s", e)
@@ -182,16 +183,24 @@ def start_watcher():
         logger.warning("Watcher: BASE_OUTPUT_PATH not set or not found, skipping")
         return None
 
+    # Resolve symlinks so inotify watches the real directory, not the symlink.
+    # Without this, inotify can miss events for new root-level subdirectories
+    # when BASE_OUTPUT_PATH is a symlink (common on Linux with /ai → /mnt/... setups).
+    watch_path = os.path.realpath(BASE_OUTPUT_PATH)
+    if watch_path != BASE_OUTPUT_PATH:
+        print(f"[Watcher] Resolved symlink: {BASE_OUTPUT_PATH} → {watch_path}")
+
     observer = Observer()
     handler = SmartGalleryHandler()
     state.watcher_handler = handler
     state.watcher_observer = observer
-    observer.schedule(handler, BASE_OUTPUT_PATH, recursive=True)
+    observer.schedule(handler, watch_path, recursive=True)
     observer.daemon = True
     observer.start()
-    logger.info("File watcher started on %s", BASE_OUTPUT_PATH)
+    logger.info("File watcher started on %s", watch_path)
 
-    # Fallback poller for new root-level directories (inotify blind spot)
+    # Fallback poller for new root-level directories (keeps working even if
+    # the symlink fix resolves the inotify issue — cheap safety net)
     _start_root_poller(handler)
 
     return observer
