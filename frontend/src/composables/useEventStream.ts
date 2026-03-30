@@ -131,27 +131,12 @@ export function useEventStream() {
     })
 
     // --- Filesystem watcher events ---
+    // The watcher debounces all filesystem events into a single DB sync.
+    // When it finds changes, it publishes one event — we force-refresh
+    // to pick up new folders and files in a single round trip.
 
-    eventSource.addEventListener('files_detected', (e) => {
-      const data = JSON.parse(e.data)
-      const folderKnown = !!gallery.folders[data.folder_key]
-      // Unknown folder = new folder created by ComfyUI; force_refresh to pull in the folder tree
-      if (!folderKnown || isFolderRelevant(data.folder_key)) {
-        debouncedRefetch(!folderKnown)
-      }
-    })
-
-    eventSource.addEventListener('files_removed', (e) => {
-      const data = JSON.parse(e.data)
-      data.file_ids?.forEach((id: string) => gallery.removeFile(id))
-    })
-
-    eventSource.addEventListener('file_moved_external', (e) => {
-      const data = JSON.parse(e.data)
-      gallery.removeFile(data.old_file_id)
-      if (isFolderRelevant(data.folder_key)) {
-        debouncedRefetch()
-      }
+    eventSource.addEventListener('watcher_sync_complete', () => {
+      debouncedRefetch(true)
     })
 
     // --- Scan progress events ---

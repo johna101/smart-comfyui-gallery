@@ -22,7 +22,7 @@ from smartgallery.config import (
 from smartgallery.models import get_db_connection, init_db
 from smartgallery.processing import process_single_file, find_ffprobe_path
 from smartgallery import state
-from smartgallery.events import event_bus, GalleryEvent
+from smartgallery.events import event_bus, GalleryEvent, publish_event
 from smartgallery.queries import (
     FILES_UPSERT, FILES_SELECT_PATH_MTIME_ALL, FILES_DELETE_BY_PATH,
     FILES_SELECT_PATH_MTIME_FOLDER, FILES_COUNT,
@@ -280,6 +280,96 @@ def full_sync_database(conn):
     elapsed = time.time() - start_time
     print(f"INFO: Full scan completed in {elapsed:.2f} seconds.")
     _publish_scan_progress(0, 0, phase='complete')
+
+def watcher_sync(conn):
+    """Lightweight database sync triggered by filesystem watcher.
+
+    Same reconciliation logic as full_sync_database (diff disk vs DB, process
+    new/changed files, delete removed files) but without progress UI, tqdm,
+    or scan_in_progress state. Designed to run frequently after small changes.
+
+    Publishes a single 'watcher_sync_complete' SSE event when changes are found,
+    so the frontend can refetch the current view.
+    """
+    start = time.time()
+    all_folders = get_dynamic_folder_config(force_refresh=True)
+    db_files = {row['path']: row['mtime'] for row in conn.execute(FILES_SELECT_PATH_MTIME_ALL).fetchall()}
+
+    valid_extensions = {
+        '.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif', '.webp', '.gif',
+        '.mp4', '.mov', '.webm', '.mkv', '.avi', '.m4v', '.wmv', '.flv', '.mts', '.ts',
+        '.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac'
+    }
+
+    disk_files = {}
+    for folder_data in all_folders.values():
+        folder_path = folder_data['path']
+        if not os.path.isdir(folder_path):
+            continue
+        try:
+            for name in os.listdir(folder_path):
+                if name.startswith('._'):
+                    continue
+                filepath = os.path.join(folder_path, name)
+                _, ext = os.path.splitext(name)
+                if os.path.isfile(filepath) and ext.lower() in valid_extensions:
+                    disk_files[filepath] = os.path.getmtime(filepath)
+        except OSError:
+            pass
+
+    db_paths = set(db_files.keys())
+    disk_paths = set(disk_files.keys())
+
+    to_delete = db_paths - disk_paths
+    to_add = disk_paths - db_paths
+    to_check = disk_paths & db_paths
+    to_update = {p for p in to_check if int(disk_files.get(p, 0)) > int(db_files.get(p, 0))}
+
+    files_to_process = list(to_add | to_update)
+    added = 0
+    removed = 0
+
+    # Process new/changed files
+    if files_to_process:
+        chunk = []
+        for filepath in files_to_process:
+            if state.folder_operation_in_progress:
+                break
+            result = process_single_file(filepath)
+            if result:
+                chunk.append(result)
+        if chunk:
+            conn.executemany(FILES_UPSERT, chunk)
+            conn.commit()
+            added = len(chunk)
+
+    # Delete removed files (skip files on offline mounts)
+    if to_delete:
+        mount_rows = conn.execute(MOUNTED_SELECT_ALL).fetchall()
+        offline_prefixes = [
+            row['path'] for row in mount_rows
+            if not os.path.exists(row['path'])
+        ]
+        safe_to_delete = [
+            p for p in to_delete
+            if not any(p.startswith(prefix) for prefix in offline_prefixes)
+        ]
+        if safe_to_delete:
+            conn.executemany(FILES_DELETE_BY_PATH, [(p,) for p in safe_to_delete])
+            conn.commit()
+            removed = len(safe_to_delete)
+
+    elapsed = time.time() - start
+    if added or removed:
+        print(f"[Watcher] Sync: +{added} -{removed} ({elapsed:.2f}s)")
+        publish_event("watcher_sync_complete", {
+            "added": added,
+            "removed": removed,
+        }, source="watcher")
+    else:
+        logger = __import__('logging').getLogger(__name__)
+        logger.debug("Watcher sync: no changes (%.2fs)", elapsed)
+
 
 def sync_folder_on_demand(folder_path):
     yield f"data: {json.dumps({'message': 'Checking folder for changes...', 'current': 0, 'total': 1})}\n\n"
