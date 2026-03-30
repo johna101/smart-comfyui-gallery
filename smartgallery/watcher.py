@@ -101,9 +101,24 @@ class SmartGalleryHandler(FileSystemEventHandler):
             from smartgallery.folders import watcher_sync
             from smartgallery.models import get_db_connection
             with get_db_connection() as conn:
-                watcher_sync(conn)
+                changed = watcher_sync(conn)
+            # If the sync found changes, reschedule the observer so inotify
+            # picks up watches for any new directories on the tree.
+            if changed:
+                self._refresh_observer()
         except Exception as e:
             logger.warning("Watcher rescan failed: %s", e)
+
+    def _refresh_observer(self):
+        """Reschedule the observer to pick up inotify watches for new directories."""
+        observer = state.watcher_observer
+        if observer:
+            try:
+                observer.unschedule_all()
+                observer.schedule(self, BASE_OUTPUT_PATH, recursive=True)
+                logger.info("Watcher: refreshed observer watches")
+            except Exception as e:
+                logger.warning("Watcher: failed to refresh observer: %s", e)
 
     def on_any_event(self, event):
         if self._suppressed():

@@ -366,9 +366,9 @@ def watcher_sync(conn):
             "added": added,
             "removed": removed,
         }, source="watcher")
-    else:
-        logger = __import__('logging').getLogger(__name__)
-        logger.debug("Watcher sync: no changes (%.2fs)", elapsed)
+        return True
+
+    return False
 
 
 def sync_folder_on_demand(folder_path):

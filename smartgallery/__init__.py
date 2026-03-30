@@ -55,4 +55,8 @@ def create_app():
     def root_redirect():
         return redirect(url_for('gallery.gallery_view', folder_key='_root_'))
 
+    # Suppress noisy per-request logs from werkzeug (GET /galleryout/api/folder/... 200)
+    import logging as _logging
+    _logging.getLogger('werkzeug').setLevel(_logging.WARNING)
+
     return app
