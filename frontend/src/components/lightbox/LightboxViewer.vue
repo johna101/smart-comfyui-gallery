@@ -7,7 +7,7 @@ import { useLightboxZoom } from '@/composables/useLightboxZoom'
 import { useLightboxKeys } from '@/composables/useLightboxKeys'
 import { useFolderNavigation } from '@/composables/useFolderNavigation'
 import { useToast } from '@/composables/useToast'
-import { Copy, X, ExternalLink } from 'lucide-vue-next'
+import { Copy, X, ExternalLink, ChevronDown } from 'lucide-vue-next'
 import type { CivitAIResource } from '@/types/gallery'
 import LightboxHeader from './LightboxHeader.vue'
 import LightboxMedia from './LightboxMedia.vue'
@@ -56,10 +56,74 @@ function airType(air: string): string {
   return match ? match[1] : 'unknown'
 }
 
+// --- Generation params (on-demand fetch from node_summary API) ---
+interface GenerationParam {
+  key: string
+  display: string
+  value: string | number
+  type: string
+  group: 'core' | 'extended'
+  order: number
+}
+
+const metaCache = ref<Record<string, { generation_params: GenerationParam[], negative_prompt: string }>>({})
+const showExtendedParams = ref(false)
+const showPositivePrompt = ref(true)
+const showNegativePrompt = ref(false)
+const metaLoading = ref(false)
+
+const generationParams = computed<GenerationParam[]>(() => {
+  const fileId = currentFile.value?.id
+  if (!fileId || !metaCache.value[fileId]) return []
+  return metaCache.value[fileId].generation_params || []
+})
+
+const coreParams = computed(() => generationParams.value.filter(p => p.group === 'core'))
+const extendedParams = computed(() => generationParams.value.filter(p => p.group === 'extended'))
+
+const cachedNegativePrompt = computed(() => {
+  const fileId = currentFile.value?.id
+  if (!fileId || !metaCache.value[fileId]) return ''
+  return metaCache.value[fileId].negative_prompt || ''
+})
+
+async function fetchMetaIfNeeded() {
+  const file = currentFile.value
+  if (!file?.has_workflow) return
+  if (metaCache.value[file.id]) return
+
+  metaLoading.value = true
+  try {
+    const resp = await mediaApi.getNodeSummary(file.id)
+    if (resp.status === 'success' && resp.meta) {
+      metaCache.value[file.id] = {
+        generation_params: (resp.meta.generation_params as GenerationParam[]) || [],
+        negative_prompt: (resp.meta.negative_prompt as string) || '',
+      }
+    }
+  } catch { /* silent */ }
+  metaLoading.value = false
+}
+
+function formatParamValue(param: GenerationParam): string {
+  if (param.type === 'float' && typeof param.value === 'number') {
+    return param.value % 1 === 0 ? param.value.toFixed(1) : String(param.value)
+  }
+  if (param.type === 'int' && typeof param.value === 'number' && param.key !== 'Seed') {
+    return param.value.toLocaleString()
+  }
+  return String(param.value)
+}
+
 // --- Bind zoom container ref from media component ---
 watch(mediaRef, (comp) => {
   zoom.containerEl.value = comp?.rootRef ?? null
 }, { immediate: true })
+
+// --- Fetch meta when panel opens or file changes while panel is open ---
+watch([showMeta, () => ui.lightboxIndex], () => {
+  if (showMeta.value) fetchMetaIfNeeded()
+})
 
 // --- Reset zoom on file change ---
 watch(() => ui.lightboxIndex, () => {
@@ -360,18 +424,95 @@ useLightboxKeys({
                   <div v-if="currentFile.has_workflow" class="text-workflow text-xs">✓ Has workflow</div>
                 </div>
 
-                <!-- Prompt -->
+                <!-- Generation Parameters -->
+                <div v-if="coreParams.length > 0">
+                  <h4 class="text-white/50 text-xs uppercase tracking-wide mb-1.5">Generation</h4>
+                  <div class="bg-white/5 rounded-lg p-2.5 space-y-1">
+                    <!-- Core params — always visible -->
+                    <div
+                      v-for="param in coreParams"
+                      :key="param.key"
+                      class="flex items-baseline justify-between gap-2 px-1 py-0.5"
+                    >
+                      <span class="text-white/40 text-xs shrink-0">{{ param.display }}</span>
+                      <span
+                        class="text-white/80 text-xs text-right truncate"
+                        :class="{ 'font-mono': param.type === 'hash' }"
+                        :title="String(param.value)"
+                      >{{ formatParamValue(param) }}</span>
+                    </div>
+
+                    <!-- Extended params — toggle -->
+                    <template v-if="extendedParams.length > 0">
+                      <button
+                        class="flex items-center gap-1 text-white/30 hover:text-white/60 text-[10px] uppercase tracking-wide pt-1 cursor-pointer w-full"
+                        @click="showExtendedParams = !showExtendedParams"
+                      >
+                        <ChevronDown
+                          :size="12"
+                          class="transition-transform"
+                          :class="{ '-rotate-90': !showExtendedParams }"
+                        />
+                        {{ showExtendedParams ? 'Less' : 'More' }} ({{ extendedParams.length }})
+                      </button>
+
+                      <template v-if="showExtendedParams">
+                        <div
+                          v-for="param in extendedParams"
+                          :key="param.key"
+                          class="flex items-baseline justify-between gap-2 px-1 py-0.5"
+                        >
+                          <span class="text-white/40 text-xs shrink-0">{{ param.display }}</span>
+                          <span
+                            class="text-white/80 text-xs text-right truncate"
+                            :class="{ 'font-mono text-white/50': param.type === 'hash' }"
+                            :title="String(param.value)"
+                          >{{ formatParamValue(param) }}</span>
+                        </div>
+                      </template>
+                    </template>
+                  </div>
+                </div>
+
+                <!-- Prompt (collapsible, starts expanded) -->
                 <div v-if="currentFile.workflow_prompt">
                   <div class="flex items-center justify-between mb-1">
-                    <h4 class="text-white/50 text-xs uppercase tracking-wide">Prompt</h4>
+                    <button
+                      class="flex items-center gap-1 text-white/50 text-xs uppercase tracking-wide cursor-pointer hover:text-white/70"
+                      @click="showPositivePrompt = !showPositivePrompt"
+                    >
+                      <ChevronDown :size="12" class="transition-transform" :class="{ '-rotate-90': !showPositivePrompt }" />
+                      Prompt
+                    </button>
                     <button
                       class="text-white/30 hover:text-white text-xs cursor-pointer"
                       title="Copy prompt"
                       @click="copyToClipboard(currentFile.workflow_prompt)"
                     ><Copy :size="12" /></button>
                   </div>
-                  <div class="text-white/80 text-xs leading-relaxed whitespace-pre-wrap bg-white/5 rounded-lg p-3 max-h-[40vh] overflow-y-auto">
+                  <div v-if="showPositivePrompt" class="text-white/80 text-xs leading-relaxed whitespace-pre-wrap bg-white/5 rounded-lg p-3 max-h-[40vh] overflow-y-auto">
                     {{ currentFile.workflow_prompt }}
+                  </div>
+                </div>
+
+                <!-- Negative Prompt (collapsible, starts collapsed) -->
+                <div v-if="cachedNegativePrompt">
+                  <div class="flex items-center justify-between mb-1">
+                    <button
+                      class="flex items-center gap-1 text-white/50 text-xs uppercase tracking-wide cursor-pointer hover:text-white/70"
+                      @click="showNegativePrompt = !showNegativePrompt"
+                    >
+                      <ChevronDown :size="12" class="transition-transform" :class="{ '-rotate-90': !showNegativePrompt }" />
+                      Negative Prompt
+                    </button>
+                    <button
+                      class="text-white/30 hover:text-white text-xs cursor-pointer"
+                      title="Copy negative prompt"
+                      @click="copyToClipboard(cachedNegativePrompt)"
+                    ><Copy :size="12" /></button>
+                  </div>
+                  <div v-if="showNegativePrompt" class="text-white/60 text-xs leading-relaxed whitespace-pre-wrap bg-white/5 rounded-lg p-3 max-h-[20vh] overflow-y-auto">
+                    {{ cachedNegativePrompt }}
                   </div>
                 </div>
 

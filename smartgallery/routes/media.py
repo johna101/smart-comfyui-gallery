@@ -201,6 +201,7 @@ def get_node_summary(file_id):
                         'height': h,
                         'loras': cleaned['loras'],
                         'civitai_resources': civitai_list,
+                        'generation_params': parsed_params.get('generation_params', []),
                     }
             except Exception as e:
                 print(f"Parameters chunk parse warning: {e}")
@@ -230,6 +231,7 @@ def get_node_summary(file_id):
                 if has_prompt and tech_count >= 2:
                     meta_data = parsed_meta
                     meta_data['civitai_resources'] = []
+                    meta_data['generation_params'] = []
                     if not meta_data.get('width') or not meta_data.get('height'):
                         if db_dimensions and 'x' in db_dimensions:
                             w, h = db_dimensions.split('x')

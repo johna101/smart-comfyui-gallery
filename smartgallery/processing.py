@@ -246,12 +246,18 @@ def parse_a1111_parameters(text):
         Negative prompt: <negative prompt>
         Steps: 20, Sampler: Euler a, CFG scale: 4.0, Seed: 123, Size: 720x1248, Model: name, ...
         Civitai resources: [{...}]
+
+    Returns dict with convenience keys (steps, sampler, etc.) for DB pipeline,
+    plus generation_params list of typed dicts for the frontend.
     """
+    from smartgallery.parameters import parse_params_line
+
     result = {
         'positive_prompt': '', 'negative_prompt': '',
         'steps': None, 'sampler': None, 'cfg': None,
         'seed': None, 'size': None, 'model': None,
-        'civitai_resources': ''
+        'civitai_resources': '',
+        'generation_params': []
     }
 
     if not text or not isinstance(text, str):
@@ -265,7 +271,6 @@ def parse_a1111_parameters(text):
     else:
         # No negative prompt — look for Steps: line directly
         remainder = text
-        # Everything before the params line is the positive prompt
         lines = text.split('\n')
         for i, line in enumerate(lines):
             if line.startswith('Steps: '):
@@ -286,7 +291,6 @@ def parse_a1111_parameters(text):
             neg_lines = lines[:i]
             break
     else:
-        # No params line found — everything is negative prompt
         result['negative_prompt'] = remainder.strip()
         return result
 
@@ -298,17 +302,19 @@ def parse_a1111_parameters(text):
         result['civitai_resources'] = civitai_match.group(1)
         params_line = params_line[:civitai_match.start()].rstrip(', ')
 
-    # Parse key: value pairs from params line
-    param_map = {
+    # Parse ALL key-value pairs via the data dictionary
+    generation_params = parse_params_line(params_line)
+    result['generation_params'] = generation_params
+
+    # Populate convenience keys for backward compatibility (DB pipeline, scan)
+    convenience_map = {
         'Steps': 'steps', 'Sampler': 'sampler', 'CFG scale': 'cfg',
         'Seed': 'seed', 'Size': 'size', 'Model': 'model',
     }
-    # Split carefully — values may contain commas in model names but keys are known
-    for key, field in param_map.items():
-        pattern = re.escape(key) + r': ([^,]+?)(?:,\s|$)'
-        m = re.search(pattern, params_line)
-        if m:
-            result[field] = m.group(1).strip()
+    for param in generation_params:
+        field = convenience_map.get(param['key'])
+        if field:
+            result[field] = param['value']
 
     return result
 
