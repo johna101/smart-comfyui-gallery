@@ -37,10 +37,10 @@ def print_startup_banner():
     """
     print(banner)
     print(f"   {Colors.BOLD}Smart Gallery for ComfyUI{Colors.RESET}")
-    print(f"   Author     : {Colors.BLUE}Biagio Maffettone{Colors.RESET}")
+    print(f"   Author     : {Colors.BLUE}John Anderson{Colors.RESET}")
     print(f"   Version    : {Colors.YELLOW}{APP_VERSION}{Colors.RESET} ({APP_VERSION_DATE})")
     print(f"   GitHub     : {Colors.CYAN}{GITHUB_REPO_URL}{Colors.RESET}")
-    print(f"   Contributor: {Colors.CYAN}Martial Michel (Docker & Codebase){Colors.RESET}")
+    print(f"   Contributor: {Colors.CYAN}Biagio Maffettone, Martial Michel (Docker & Codebase){Colors.RESET}")
     print("")
 
 
