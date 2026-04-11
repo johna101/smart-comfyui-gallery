@@ -114,6 +114,19 @@ interface UnifiedResource {
 const unifiedResources = computed<UnifiedResource[]>(() => {
   const resources: UnifiedResource[] = []
 
+  // CivitAI resources (checkpoint, embeddings, etc.) — exclude LoRAs when lora_info provides them
+  for (const res of civitaiResources.value) {
+    const type = airType(res.air || '')
+    if (type === 'lora' && cachedLoraInfo.value.length > 0) continue
+    resources.push({
+      type,
+      name: res.modelName,
+      versionName: res.versionName,
+      weight: res.weight,
+      url: res.air ? airToUrl(res.air) : null,
+    })
+  }
+
   // LoRAs from lora_info (structured, first-class)
   for (const lora of cachedLoraInfo.value) {
     const civitai = lora.civitai
@@ -127,18 +140,9 @@ const unifiedResources = computed<UnifiedResource[]>(() => {
     })
   }
 
-  // CivitAI resources (checkpoint, embeddings, etc.) — exclude LoRAs to avoid duplicates
-  for (const res of civitaiResources.value) {
-    const type = airType(res.air || '')
-    if (type === 'lora' && cachedLoraInfo.value.length > 0) continue // already shown from lora_info
-    resources.push({
-      type,
-      name: res.modelName,
-      versionName: res.versionName,
-      weight: res.weight,
-      url: res.air ? airToUrl(res.air) : null,
-    })
-  }
+  // Sort: checkpoint first, then loras, then embeddings, then rest
+  const typeOrder: Record<string, number> = { checkpoint: 0, lora: 1, embedding: 2 }
+  resources.sort((a, b) => (typeOrder[a.type] ?? 3) - (typeOrder[b.type] ?? 3))
 
   return resources
 })
@@ -609,16 +613,22 @@ useLightboxKeys({
                       class="flex items-start gap-2 px-1.5 py-1.5 rounded hover:bg-white/5"
                       :class="{ 'opacity-40': resource.enabled === false }"
                     >
-                      <span
-                        class="shrink-0 text-[10px] font-medium uppercase px-1.5 py-0.5 rounded mt-0.5"
-                        :class="{
-                          'bg-blue-500/20 text-blue-300': resource.type === 'checkpoint',
-                          'bg-amber-500/20 text-amber-300': resource.type === 'lora' && resource.enabled !== false,
-                          'bg-white/10 text-white/40 line-through': resource.type === 'lora' && resource.enabled === false,
-                          'bg-purple-500/20 text-purple-300': resource.type === 'embedding',
-                          'bg-white/10 text-white/50': !['checkpoint', 'lora', 'embedding'].includes(resource.type)
-                        }"
-                      >{{ resource.type === 'lora' && resource.weight != null ? resource.weight : resource.type }}</span>
+                      <div class="flex items-center gap-1 shrink-0 mt-0.5">
+                        <span
+                          class="text-[10px] font-medium uppercase px-1.5 py-0.5 rounded"
+                          :class="{
+                            'bg-blue-500/20 text-blue-300': resource.type === 'checkpoint',
+                            'bg-amber-500/20 text-amber-300': resource.type === 'lora' && resource.enabled !== false,
+                            'bg-white/10 text-white/40 line-through': resource.type === 'lora' && resource.enabled === false,
+                            'bg-purple-500/20 text-purple-300': resource.type === 'embedding',
+                            'bg-white/10 text-white/50': !['checkpoint', 'lora', 'embedding'].includes(resource.type)
+                          }"
+                        >{{ resource.type }}</span>
+                        <span
+                          v-if="resource.type === 'lora' && resource.weight != null"
+                          class="text-[10px] px-1 py-0.5 rounded bg-white/5 text-white/40"
+                        >{{ resource.weight }}</span>
+                      </div>
                       <div class="flex-1 min-w-0">
                         <a
                           v-if="resource.url"
@@ -633,9 +643,6 @@ useLightboxKeys({
                         <span v-else class="text-white/80 text-xs truncate block">{{ resource.name }}</span>
                         <div class="text-white/40 text-[10px]">
                           <span v-if="resource.versionName">{{ resource.versionName }}</span>
-                          <span v-if="resource.type !== 'lora' && resource.weight != null && resource.weight !== 1.0" class="text-white/30">
-                            @ {{ resource.weight }}
-                          </span>
                           <span v-if="resource.enabled === false" class="text-white/30"> · disabled</span>
                         </div>
                       </div>
