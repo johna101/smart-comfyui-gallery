@@ -221,6 +221,25 @@ def extract_workflow(filepath, target_type='ui'):
     return None
 
 
+def extract_gallery_metadata(filepath):
+    """
+    Extract the 'gallery_metadata' JSON text chunk from a PNG file.
+    Written by our Image Saver fork — structured JSON, no parsing needed.
+    Returns parsed dict or None.
+    """
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext != '.png':
+        return None
+    try:
+        with Image.open(filepath) as img:
+            raw = img.info.get('gallery_metadata')
+            if raw:
+                return json.loads(raw)
+    except (OSError, Image.DecompressionBombError, json.JSONDecodeError, ValueError):
+        pass
+    return None
+
+
 def extract_parameters_chunk(filepath):
     """
     Extract the A1111/CivitAI 'parameters' text chunk from a PNG file.
@@ -594,13 +613,24 @@ def process_single_file(filepath):
         workflow_prompt_content = ""
         civitai_resources_content = ""
 
-        # Try A1111/CivitAI parameters chunk first (clean, structured data)
-        params_raw = extract_parameters_chunk(filepath)
-        if params_raw:
-            parsed_params = parse_a1111_parameters(params_raw)
-            if parsed_params.get('positive_prompt') and len(parsed_params['positive_prompt']) > 5:
-                workflow_prompt_content = parsed_params['positive_prompt']
-                civitai_resources_content = parsed_params.get('civitai_resources', '')
+        # Priority 1: gallery_metadata JSON chunk (our Image Saver fork)
+        gallery_meta = extract_gallery_metadata(filepath)
+        if gallery_meta:
+            positive = gallery_meta.get('positive', '')
+            if positive and len(positive) > 5:
+                workflow_prompt_content = positive
+            civitai_res = gallery_meta.get('civitai_resources')
+            if civitai_res:
+                civitai_resources_content = json.dumps(civitai_res)
+
+        # Priority 2: A1111/CivitAI parameters chunk (legacy, downloaded images)
+        if not workflow_prompt_content:
+            params_raw = extract_parameters_chunk(filepath)
+            if params_raw:
+                parsed_params = parse_a1111_parameters(params_raw)
+                if parsed_params.get('positive_prompt') and len(parsed_params['positive_prompt']) > 5:
+                    workflow_prompt_content = parsed_params['positive_prompt']
+                    civitai_resources_content = parsed_params.get('civitai_resources', '')
 
         # Fall back to workflow graph scanning for prompt/files
         if metadata['has_workflow']:

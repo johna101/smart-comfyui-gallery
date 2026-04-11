@@ -17,6 +17,7 @@ GENERATION_PARAMS = {
     'Sampler':            {'type': 'str',   'display': 'Sampler',   'group': 'core', 'order': 1},
     'Schedule type':      {'type': 'str',   'display': 'Scheduler', 'group': 'core', 'order': 2},
     'Scheduler':          {'type': 'str',   'display': 'Scheduler', 'group': 'core', 'order': 2},
+    'scheduler_name':     {'type': 'str',   'display': 'Scheduler', 'group': 'core', 'order': 2},
     'CFG scale':          {'type': 'float', 'display': 'CFG',       'group': 'core', 'order': 3},
     'Steps':              {'type': 'int',   'display': 'Steps',     'group': 'core', 'order': 4},
     'Seed':               {'type': 'int',   'display': 'Seed',      'group': 'core', 'order': 5},

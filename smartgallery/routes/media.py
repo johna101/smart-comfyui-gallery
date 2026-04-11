@@ -22,7 +22,7 @@ from smartgallery.config import (
 )
 from smartgallery import state
 from smartgallery.models import get_db_connection
-from smartgallery.processing import extract_workflow, create_thumbnail, extract_parameters_chunk, parse_a1111_parameters
+from smartgallery.processing import extract_workflow, create_thumbnail, extract_parameters_chunk, parse_a1111_parameters, extract_gallery_metadata
 from smartgallery.utils import generate_node_summary, clean_prompt_text
 from smartgallery.parser import ComfyMetadataParser
 from smartgallery.routes.files import get_file_info_from_db
@@ -162,51 +162,105 @@ def get_node_summary(file_id):
 
         summary_data = generate_node_summary(ui_json)
 
-        # 3. Try A1111/CivitAI parameters chunk first (structured, reliable)
+        # 3. Try gallery_metadata JSON chunk first (our Image Saver — native JSON, no parsing)
         meta_data = {}
-        params_raw = extract_parameters_chunk(filepath)
-        if params_raw:
+        gallery_meta = extract_gallery_metadata(filepath)
+        if gallery_meta and gallery_meta.get('positive'):
             try:
-                parsed_params = parse_a1111_parameters(params_raw)
-                if parsed_params.get('positive_prompt') and len(parsed_params['positive_prompt']) > 5:
-                    # Parse size string
-                    w, h = None, None
-                    size_str = parsed_params.get('size', '')
-                    if size_str and 'x' in size_str:
-                        parts = size_str.split('x')
-                        w, h = parts[0].strip(), parts[1].strip()
-                    elif db_dimensions and 'x' in db_dimensions:
-                        w, h = db_dimensions.split('x')
-                        w, h = w.strip(), h.strip()
+                from smartgallery.parameters import cast_param
 
-                    # Parse CivitAI resources JSON
-                    civitai_list = []
-                    if parsed_params.get('civitai_resources'):
-                        try:
-                            civitai_list = json.loads(parsed_params['civitai_resources'])
-                        except (json.JSONDecodeError, ValueError):
-                            pass
+                positive = gallery_meta['positive']
+                cleaned = clean_prompt_text(positive)
+                size = gallery_meta.get('size', [])
+                w = str(size[0]) if len(size) >= 2 else None
+                h = str(size[1]) if len(size) >= 2 else None
 
-                    cleaned = clean_prompt_text(parsed_params['positive_prompt'])
-                    meta_data = {
-                        'positive_prompt': parsed_params['positive_prompt'],
-                        'negative_prompt': parsed_params.get('negative_prompt', ''),
-                        'positive_prompt_clean': cleaned['text'],
-                        'seed': parsed_params.get('seed'),
-                        'steps': parsed_params.get('steps'),
-                        'cfg': parsed_params.get('cfg'),
-                        'sampler': parsed_params.get('sampler'),
-                        'model': parsed_params.get('model'),
-                        'width': w,
-                        'height': h,
-                        'loras': cleaned['loras'],
-                        'civitai_resources': civitai_list,
-                        'generation_params': parsed_params.get('generation_params', []),
-                    }
+                if not w and db_dimensions and 'x' in db_dimensions:
+                    w, h = db_dimensions.split('x')
+                    w, h = w.strip(), h.strip()
+
+                # Build generation_params from structured JSON via data dictionary
+                generation_params = []
+                field_map = {
+                    'model': 'Model', 'sampler': 'Sampler', 'scheduler': 'Scheduler',
+                    'cfg': 'CFG scale', 'steps': 'Steps', 'seed': 'Seed',
+                }
+                for json_key, param_key in field_map.items():
+                    val = gallery_meta.get(json_key)
+                    if val is not None:
+                        generation_params.append(cast_param(param_key, str(val)))
+                if w and h:
+                    generation_params.append(cast_param('Size', f'{w}x{h}'))
+                # Optional extended params
+                if gallery_meta.get('denoise') is not None and gallery_meta['denoise'] != 1.0:
+                    generation_params.append(cast_param('Denoising strength', str(gallery_meta['denoise'])))
+                if gallery_meta.get('clip_skip'):
+                    generation_params.append(cast_param('Clip skip', str(gallery_meta['clip_skip'])))
+                if gallery_meta.get('model_hash'):
+                    generation_params.append(cast_param('Model hash', str(gallery_meta['model_hash'])))
+                generation_params.sort(key=lambda p: p['order'])
+
+                meta_data = {
+                    'positive_prompt': positive,
+                    'negative_prompt': gallery_meta.get('negative', ''),
+                    'positive_prompt_clean': cleaned['text'],
+                    'seed': gallery_meta.get('seed'),
+                    'steps': gallery_meta.get('steps'),
+                    'cfg': gallery_meta.get('cfg'),
+                    'sampler': gallery_meta.get('sampler'),
+                    'model': gallery_meta.get('model'),
+                    'width': w,
+                    'height': h,
+                    'loras': cleaned['loras'],
+                    'civitai_resources': gallery_meta.get('civitai_resources', []),
+                    'generation_params': generation_params,
+                }
             except Exception as e:
-                print(f"Parameters chunk parse warning: {e}")
+                print(f"gallery_metadata parse warning: {e}")
 
-        # 4. Fall back to workflow graph parsing if parameters chunk didn't produce metadata
+        # 4. Fall back to A1111 parameters chunk (legacy, downloaded images)
+        if not meta_data:
+            params_raw = extract_parameters_chunk(filepath)
+            if params_raw:
+                try:
+                    parsed_params = parse_a1111_parameters(params_raw)
+                    if parsed_params.get('positive_prompt') and len(parsed_params['positive_prompt']) > 5:
+                        w, h = None, None
+                        size_str = parsed_params.get('size', '')
+                        if size_str and 'x' in size_str:
+                            parts = size_str.split('x')
+                            w, h = parts[0].strip(), parts[1].strip()
+                        elif db_dimensions and 'x' in db_dimensions:
+                            w, h = db_dimensions.split('x')
+                            w, h = w.strip(), h.strip()
+
+                        civitai_list = []
+                        if parsed_params.get('civitai_resources'):
+                            try:
+                                civitai_list = json.loads(parsed_params['civitai_resources'])
+                            except (json.JSONDecodeError, ValueError):
+                                pass
+
+                        cleaned = clean_prompt_text(parsed_params['positive_prompt'])
+                        meta_data = {
+                            'positive_prompt': parsed_params['positive_prompt'],
+                            'negative_prompt': parsed_params.get('negative_prompt', ''),
+                            'positive_prompt_clean': cleaned['text'],
+                            'seed': parsed_params.get('seed'),
+                            'steps': parsed_params.get('steps'),
+                            'cfg': parsed_params.get('cfg'),
+                            'sampler': parsed_params.get('sampler'),
+                            'model': parsed_params.get('model'),
+                            'width': w,
+                            'height': h,
+                            'loras': cleaned['loras'],
+                            'civitai_resources': civitai_list,
+                            'generation_params': parsed_params.get('generation_params', []),
+                        }
+                except Exception as e:
+                    print(f"Parameters chunk parse warning: {e}")
+
+        # 5. Fall back to workflow graph parsing
         if not meta_data:
             api_json = extract_workflow(filepath, target_type='api')
 
