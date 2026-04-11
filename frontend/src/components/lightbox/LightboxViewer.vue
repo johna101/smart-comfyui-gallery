@@ -102,6 +102,47 @@ const cachedLoraInfo = computed<LoraInfo[]>(() => {
   return metaCache.value[fileId].lora_info || []
 })
 
+interface UnifiedResource {
+  type: string         // 'checkpoint', 'lora', 'embedding', etc.
+  name: string
+  versionName?: string
+  weight?: number
+  enabled?: boolean    // only for LoRAs
+  url: string | null   // CivitAI link
+}
+
+const unifiedResources = computed<UnifiedResource[]>(() => {
+  const resources: UnifiedResource[] = []
+
+  // LoRAs from lora_info (structured, first-class)
+  for (const lora of cachedLoraInfo.value) {
+    const civitai = lora.civitai
+    resources.push({
+      type: 'lora',
+      name: civitai?.modelName || lora.name,
+      versionName: civitai?.versionName,
+      weight: lora.weight,
+      enabled: lora.enabled,
+      url: civitai?.air ? airToUrl(civitai.air) : null,
+    })
+  }
+
+  // CivitAI resources (checkpoint, embeddings, etc.) — exclude LoRAs to avoid duplicates
+  for (const res of civitaiResources.value) {
+    const type = airType(res.air || '')
+    if (type === 'lora' && cachedLoraInfo.value.length > 0) continue // already shown from lora_info
+    resources.push({
+      type,
+      name: res.modelName,
+      versionName: res.versionName,
+      weight: res.weight,
+      url: res.air ? airToUrl(res.air) : null,
+    })
+  }
+
+  return resources
+})
+
 async function fetchMetaIfNeeded() {
   const file = currentFile.value
   if (!file?.has_workflow) return
@@ -558,77 +599,44 @@ useLightboxKeys({
                   </div>
                 </div>
 
-                <!-- LoRAs -->
-                <div v-if="cachedLoraInfo.length > 0">
-                  <h4 class="text-white/50 text-xs uppercase tracking-wide mb-1">LoRAs</h4>
+                <!-- Resources (unified: checkpoint, LoRAs, embeddings) -->
+                <div v-if="unifiedResources.length > 0">
+                  <h4 class="text-white/50 text-xs uppercase tracking-wide mb-1">Resources</h4>
                   <div class="bg-white/5 rounded-lg p-2 space-y-1">
                     <div
-                      v-for="(lora, i) in cachedLoraInfo"
+                      v-for="(resource, i) in unifiedResources"
                       :key="i"
                       class="flex items-start gap-2 px-1.5 py-1.5 rounded hover:bg-white/5"
-                      :class="{ 'opacity-40': !lora.enabled }"
-                    >
-                      <span
-                        class="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded mt-0.5"
-                        :class="lora.enabled ? 'bg-amber-500/20 text-amber-300' : 'bg-white/10 text-white/40 line-through'"
-                      >{{ lora.weight }}</span>
-                      <div class="flex-1 min-w-0">
-                        <template v-if="lora.civitai && airToUrl(lora.civitai.air || '')">
-                          <a
-                            :href="airToUrl(lora.civitai.air!)!"
-                            target="_blank"
-                            rel="noopener"
-                            class="text-white/90 text-xs hover:text-blue-300 transition-colors flex items-center gap-1"
-                          >
-                            <span class="truncate">{{ lora.civitai.modelName || lora.name }}</span>
-                            <ExternalLink :size="10" class="shrink-0 opacity-50" />
-                          </a>
-                          <div class="text-white/40 text-[10px]">{{ lora.civitai.versionName }}</div>
-                        </template>
-                        <template v-else>
-                          <span class="text-white/80 text-xs truncate block">{{ lora.name }}</span>
-                        </template>
-                        <div v-if="!lora.enabled" class="text-white/30 text-[10px]">disabled</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- CivitAI Resources -->
-                <div v-if="civitaiResources.length > 0">
-                  <h4 class="text-white/50 text-xs uppercase tracking-wide mb-1">CivitAI Resources</h4>
-                  <div class="bg-white/5 rounded-lg p-2 space-y-1">
-                    <div
-                      v-for="(resource, i) in civitaiResources"
-                      :key="i"
-                      class="flex items-start gap-2 px-1.5 py-1.5 rounded hover:bg-white/5"
+                      :class="{ 'opacity-40': resource.enabled === false }"
                     >
                       <span
                         class="shrink-0 text-[10px] font-medium uppercase px-1.5 py-0.5 rounded mt-0.5"
                         :class="{
-                          'bg-blue-500/20 text-blue-300': airType(resource.air) === 'checkpoint',
-                          'bg-amber-500/20 text-amber-300': airType(resource.air) === 'lora',
-                          'bg-purple-500/20 text-purple-300': airType(resource.air) === 'embedding',
-                          'bg-white/10 text-white/50': !['checkpoint', 'lora', 'embedding'].includes(airType(resource.air))
+                          'bg-blue-500/20 text-blue-300': resource.type === 'checkpoint',
+                          'bg-amber-500/20 text-amber-300': resource.type === 'lora' && resource.enabled !== false,
+                          'bg-white/10 text-white/40 line-through': resource.type === 'lora' && resource.enabled === false,
+                          'bg-purple-500/20 text-purple-300': resource.type === 'embedding',
+                          'bg-white/10 text-white/50': !['checkpoint', 'lora', 'embedding'].includes(resource.type)
                         }"
-                      >{{ airType(resource.air) }}</span>
+                      >{{ resource.type === 'lora' && resource.weight != null ? resource.weight : resource.type }}</span>
                       <div class="flex-1 min-w-0">
                         <a
-                          v-if="airToUrl(resource.air)"
-                          :href="airToUrl(resource.air)!"
+                          v-if="resource.url"
+                          :href="resource.url"
                           target="_blank"
                           rel="noopener"
                           class="text-white/90 text-xs hover:text-blue-300 transition-colors flex items-center gap-1"
                         >
-                          <span class="truncate">{{ resource.modelName }}</span>
+                          <span class="truncate">{{ resource.name }}</span>
                           <ExternalLink :size="10" class="shrink-0 opacity-50" />
                         </a>
-                        <span v-else class="text-white/80 text-xs truncate block">{{ resource.modelName }}</span>
+                        <span v-else class="text-white/80 text-xs truncate block">{{ resource.name }}</span>
                         <div class="text-white/40 text-[10px]">
-                          {{ resource.versionName }}
-                          <span v-if="resource.weight != null && resource.weight !== 1.0" class="text-white/30">
+                          <span v-if="resource.versionName">{{ resource.versionName }}</span>
+                          <span v-if="resource.type !== 'lora' && resource.weight != null && resource.weight !== 1.0" class="text-white/30">
                             @ {{ resource.weight }}
                           </span>
+                          <span v-if="resource.enabled === false" class="text-white/30"> · disabled</span>
                         </div>
                       </div>
                     </div>
