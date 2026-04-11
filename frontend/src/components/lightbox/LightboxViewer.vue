@@ -66,7 +66,16 @@ interface GenerationParam {
   order: number
 }
 
-const metaCache = ref<Record<string, { generation_params: GenerationParam[], negative_prompt: string }>>({})
+interface LoraInfo {
+  name: string
+  path: string
+  weight: number
+  enabled: boolean
+  hash?: string
+  civitai?: { modelName: string; versionName: string; air?: string; modelVersionId?: number }
+}
+
+const metaCache = ref<Record<string, { generation_params: GenerationParam[], negative_prompt: string, lora_info: LoraInfo[] }>>({})
 const showExtendedParams = ref(false)
 const showPositivePrompt = ref(true)
 const showNegativePrompt = ref(false)
@@ -87,6 +96,12 @@ const cachedNegativePrompt = computed(() => {
   return metaCache.value[fileId].negative_prompt || ''
 })
 
+const cachedLoraInfo = computed<LoraInfo[]>(() => {
+  const fileId = currentFile.value?.id
+  if (!fileId || !metaCache.value[fileId]) return []
+  return metaCache.value[fileId].lora_info || []
+})
+
 async function fetchMetaIfNeeded() {
   const file = currentFile.value
   if (!file?.has_workflow) return
@@ -99,6 +114,7 @@ async function fetchMetaIfNeeded() {
       metaCache.value[file.id] = {
         generation_params: (resp.meta.generation_params as GenerationParam[]) || [],
         negative_prompt: (resp.meta.negative_prompt as string) || '',
+        lora_info: (resp.meta.lora_info as LoraInfo[]) || [],
       }
     }
   } catch { /* silent */ }
@@ -538,6 +554,42 @@ useLightboxKeys({
                         title="Copy"
                         @click="copyToClipboard(item)"
                       ><Copy :size="12" /></button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- LoRAs -->
+                <div v-if="cachedLoraInfo.length > 0">
+                  <h4 class="text-white/50 text-xs uppercase tracking-wide mb-1">LoRAs</h4>
+                  <div class="bg-white/5 rounded-lg p-2 space-y-1">
+                    <div
+                      v-for="(lora, i) in cachedLoraInfo"
+                      :key="i"
+                      class="flex items-start gap-2 px-1.5 py-1.5 rounded hover:bg-white/5"
+                      :class="{ 'opacity-40': !lora.enabled }"
+                    >
+                      <span
+                        class="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded mt-0.5"
+                        :class="lora.enabled ? 'bg-amber-500/20 text-amber-300' : 'bg-white/10 text-white/40 line-through'"
+                      >{{ lora.weight }}</span>
+                      <div class="flex-1 min-w-0">
+                        <template v-if="lora.civitai && airToUrl(lora.civitai.air || '')">
+                          <a
+                            :href="airToUrl(lora.civitai.air!)!"
+                            target="_blank"
+                            rel="noopener"
+                            class="text-white/90 text-xs hover:text-blue-300 transition-colors flex items-center gap-1"
+                          >
+                            <span class="truncate">{{ lora.civitai.modelName || lora.name }}</span>
+                            <ExternalLink :size="10" class="shrink-0 opacity-50" />
+                          </a>
+                          <div class="text-white/40 text-[10px]">{{ lora.civitai.versionName }}</div>
+                        </template>
+                        <template v-else>
+                          <span class="text-white/80 text-xs truncate block">{{ lora.name }}</span>
+                        </template>
+                        <div v-if="!lora.enabled" class="text-white/30 text-[10px]">disabled</div>
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -619,9 +619,19 @@ def process_single_file(filepath):
             positive = gallery_meta.get('positive', '')
             if positive and len(positive) > 5:
                 workflow_prompt_content = positive
-            civitai_res = gallery_meta.get('civitai_resources')
-            if civitai_res:
-                civitai_resources_content = json.dumps(civitai_res)
+
+            # Merge CivitAI resources from top-level + per-LoRA civitai data
+            all_civitai = list(gallery_meta.get('civitai_resources', []))
+            for lora in gallery_meta.get('loras', []):
+                civitai_data = lora.get('civitai')
+                if civitai_data:
+                    # Add weight from the LoRA itself
+                    resource = dict(civitai_data)
+                    if 'weight' not in resource and lora.get('weight') is not None:
+                        resource['weight'] = lora['weight']
+                    all_civitai.append(resource)
+            if all_civitai:
+                civitai_resources_content = json.dumps(all_civitai)
 
         # Priority 2: A1111/CivitAI parameters chunk (legacy, downloaded images)
         if not workflow_prompt_content:

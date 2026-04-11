@@ -200,6 +200,16 @@ def get_node_summary(file_id):
                     generation_params.append(cast_param('Model hash', str(gallery_meta['model_hash'])))
                 generation_params.sort(key=lambda p: p['order'])
 
+                # Merge CivitAI resources: top-level + per-LoRA civitai data
+                all_civitai = list(gallery_meta.get('civitai_resources', []))
+                for lora in gallery_meta.get('loras', []):
+                    civitai_data = lora.get('civitai')
+                    if civitai_data:
+                        resource = dict(civitai_data)
+                        if 'weight' not in resource and lora.get('weight') is not None:
+                            resource['weight'] = lora['weight']
+                        all_civitai.append(resource)
+
                 meta_data = {
                     'positive_prompt': positive,
                     'negative_prompt': gallery_meta.get('negative', ''),
@@ -212,8 +222,9 @@ def get_node_summary(file_id):
                     'width': w,
                     'height': h,
                     'loras': cleaned['loras'],
-                    'civitai_resources': gallery_meta.get('civitai_resources', []),
+                    'civitai_resources': all_civitai,
                     'generation_params': generation_params,
+                    'lora_info': gallery_meta.get('loras', []),
                 }
             except Exception as e:
                 print(f"gallery_metadata parse warning: {e}")
