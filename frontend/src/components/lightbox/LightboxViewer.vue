@@ -453,8 +453,8 @@ useLightboxKeys({
           <Transition name="slide-right">
             <div
               v-if="showMeta && currentFile && !uiHidden"
-              class="absolute left-0 top-0 bottom-0 w-[360px] max-w-[50%] z-30 overflow-y-auto
-                bg-black/70 backdrop-blur-md border-r border-white/10"
+              class="absolute right-0 top-0 bottom-0 w-[360px] max-w-[50%] z-30 overflow-y-auto
+                bg-black/70 backdrop-blur-md border-l border-white/10"
             >
               <div class="p-4 space-y-4 text-sm">
                 <div class="flex items-center justify-between">
@@ -768,7 +768,7 @@ useLightboxKeys({
 }
 .slide-right-enter-from,
 .slide-right-leave-to {
-  transform: translateX(-100%);
+  transform: translateX(100%);
   opacity: 0;
 }
 </style>
