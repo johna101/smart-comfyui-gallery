@@ -447,24 +447,13 @@ useLightboxKeys({
           @send-workflow="sendWorkflow"
         />
 
-        <!-- Media area + metadata overlay -->
-        <div class="flex-1 min-h-0 relative">
-          <LightboxMedia
-            ref="mediaRef"
-            :file="currentFile"
-            :transform-style="zoom.transformStyle.value"
-            :is-dragging="zoom.isDragging.value"
-            @drag-start="zoom.onDragStart"
-            @drag-move="zoom.onDragMove"
-            @drag-end="zoom.onDragEnd"
-            @wheel="zoom.onWheel"
-          />
-
-          <!-- Metadata panel (positioned within media area, below header) -->
+        <!-- Content area: metadata panel + media side by side -->
+        <div class="flex-1 min-h-0 flex relative">
+          <!-- Metadata panel (overlays media from the left, constrained to content area) -->
           <Transition name="slide-right">
             <div
               v-if="showMeta && currentFile && !uiHidden"
-              class="absolute left-0 inset-y-0 w-[360px] max-w-[50%] z-30 overflow-y-auto
+              class="absolute left-0 top-0 bottom-0 w-[360px] max-w-[50%] z-30 overflow-y-auto
                 bg-black/70 backdrop-blur-md border-r border-white/10"
             >
               <div class="p-4 space-y-4 text-sm">
@@ -653,6 +642,18 @@ useLightboxKeys({
               </div>
             </div>
           </Transition>
+
+          <!-- Media -->
+          <LightboxMedia
+            ref="mediaRef"
+            :file="currentFile"
+            :transform-style="zoom.transformStyle.value"
+            :is-dragging="zoom.isDragging.value"
+            @drag-start="zoom.onDragStart"
+            @drag-move="zoom.onDragMove"
+            @drag-end="zoom.onDragEnd"
+            @wheel="zoom.onWheel"
+          />
 
           <!-- Navigation arrows (bottom-centre) -->
           <div
