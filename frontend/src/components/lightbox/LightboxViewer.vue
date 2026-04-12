@@ -448,7 +448,7 @@ useLightboxKeys({
         />
 
         <!-- Content area: metadata panel + media side by side -->
-        <div class="flex-1 min-h-0 flex relative">
+        <div class="flex-1 min-h-0 flex relative overflow-hidden">
           <!-- Metadata panel (overlays media from the left, constrained to content area) -->
           <Transition name="slide-right">
             <div
