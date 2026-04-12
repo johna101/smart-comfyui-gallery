@@ -447,8 +447,8 @@ useLightboxKeys({
           @send-workflow="sendWorkflow"
         />
 
-        <!-- Media area -->
-        <div class="flex-1 relative min-h-0">
+        <!-- Media area + metadata overlay -->
+        <div class="flex-1 min-h-0 relative">
           <LightboxMedia
             ref="mediaRef"
             :file="currentFile"
@@ -460,11 +460,11 @@ useLightboxKeys({
             @wheel="zoom.onWheel"
           />
 
-          <!-- Metadata panel -->
+          <!-- Metadata panel (positioned within media area, below header) -->
           <Transition name="slide-right">
             <div
               v-if="showMeta && currentFile && !uiHidden"
-              class="absolute left-0 top-0 bottom-0 w-[360px] max-w-[50%] z-30 overflow-y-auto
+              class="absolute left-0 inset-y-0 w-[360px] max-w-[50%] z-30 overflow-y-auto
                 bg-black/70 backdrop-blur-md border-r border-white/10"
             >
               <div class="p-4 space-y-4 text-sm">
