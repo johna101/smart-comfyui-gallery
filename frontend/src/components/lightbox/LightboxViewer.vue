@@ -458,7 +458,7 @@ useLightboxKeys({
             >
               <div class="p-4 space-y-4 text-sm">
                 <div class="flex items-center justify-between">
-                  <h3 class="text-white font-medium">File Info</h3>
+                  <h3 class="text-white font-medium">File Info...</h3>
                   <button
                     class="text-white/40 hover:text-white cursor-pointer"
                     @click="showMeta = false"
@@ -569,7 +569,7 @@ useLightboxKeys({
                 <!-- Workflow files -->
                 <div v-if="currentFile.workflow_files">
                   <div class="flex items-center justify-between mb-1">
-                    <h4 class="text-white/50 text-xs uppercase tracking-wide">Workflow Files</h4>
+                    <h4 class="text-white/50 text-xs uppercase tracking-wide">Workflow Files...</h4>
                     <button
                       class="text-white/30 hover:text-white text-xs cursor-pointer"
                       title="Copy all"
