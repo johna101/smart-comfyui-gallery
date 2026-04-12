@@ -654,23 +654,22 @@ useLightboxKeys({
             </div>
           </Transition>
 
-          <!-- Navigation arrows -->
-          <button
-            v-if="fileCount > 1"
-            class="absolute left-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white text-5xl z-30 p-2 transition-colors"
-            title="Previous (←)"
-            @click="navigate(-1)"
+          <!-- Navigation arrows (bottom-centre) -->
+          <div
+            v-if="fileCount > 1 && !uiHidden"
+            class="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-4"
           >
-            ‹
-          </button>
-          <button
-            v-if="fileCount > 1"
-            class="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white text-5xl z-30 p-2 transition-colors"
-            title="Next (→)"
-            @click="navigate(1)"
-          >
-            ›
-          </button>
+            <button
+              class="text-white/40 hover:text-white text-3xl p-3 rounded-full bg-black/30 hover:bg-black/50 backdrop-blur-sm transition-all cursor-pointer"
+              title="Previous (←)"
+              @click="navigate(-1)"
+            >‹</button>
+            <button
+              class="text-white/40 hover:text-white text-3xl p-3 rounded-full bg-black/30 hover:bg-black/50 backdrop-blur-sm transition-all cursor-pointer"
+              title="Next (→)"
+              @click="navigate(1)"
+            >›</button>
+          </div>
         </div>
 
         <!-- Bottom bar -->
