@@ -458,7 +458,7 @@ useLightboxKeys({
             >
               <div class="p-4 space-y-4 text-sm">
                 <div class="flex items-center justify-between">
-                  <h3 class="text-white font-medium">File Info</h3>
+                  <h3 class="text-white font-medium">File Info...</h3>
                   <button
                     class="text-white/40 hover:text-white cursor-pointer"
                     @click="showMeta = false"
